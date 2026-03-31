@@ -2,12 +2,21 @@ import { Markdown } from "@agentscope-ai/chat";
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  createContact,
+  createFundraiseInvestor,
+  createGoal,
+  createKnowledgeSource,
   decideApproval,
   fetchBootstrap,
   launchApp,
+  launchWorkflow,
   publishInvestorRoom,
   saveArtifact,
   sendFounderMessage,
+  updateAgent,
+  updateFundraiseInvestor,
+  updateGoal,
+  updateWorkspace,
 } from "./lib/api";
 import type {
   AppCategory,
@@ -182,6 +191,53 @@ function App() {
   const [isPublishingRoom, setIsPublishingRoom] = useState(false);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isSubmittingPanel, setIsSubmittingPanel] = useState(false);
+  const [workspaceForm, setWorkspaceForm] = useState({
+    company_name: "",
+    founder_name: "",
+    stage: "",
+    mission: "",
+    primary_kpi: "",
+    summary: "",
+  });
+  const [goalForm, setGoalForm] = useState({
+    title: "",
+    owner: "ChiefOfStaffAgent",
+    kpi: "",
+    due_date: "2026-06-30",
+    linked_agents: [] as string[],
+    status: "Planned",
+  });
+  const [knowledgeForm, setKnowledgeForm] = useState({
+    title: "",
+    source_type: "doc",
+    status: "Connected",
+    freshness: "Today",
+  });
+  const [selectedAgentId, setSelectedAgentId] = useState("");
+  const [agentForm, setAgentForm] = useState({
+    budget: "",
+    permissions: "",
+    escalation_rule: "",
+  });
+  const [workflowNote, setWorkflowNote] = useState("");
+  const [investorForm, setInvestorForm] = useState({
+    name: "",
+    thesis: "",
+    stage_fit: "Seed",
+    relationship_status: "New",
+    next_step: "",
+  });
+  const [investorDrafts, setInvestorDrafts] = useState<
+    Record<string, { relationship_status: string; next_step: string }>
+  >({});
+  const [contactForm, setContactForm] = useState({
+    name: "",
+    category: "Advisor",
+    company: "",
+    relationship_stage: "New",
+    last_touch: "",
+  });
 
   useEffect(() => {
     const load = async () => {
@@ -199,6 +255,23 @@ function App() {
         const initialApp = bootstrap.apps.find((app) => app.featured) ?? bootstrap.apps[0];
         if (initialApp) {
           setSelectedAppId(initialApp.id);
+        }
+        setWorkspaceForm({
+          company_name: bootstrap.workspace.company_name,
+          founder_name: bootstrap.workspace.founder_name,
+          stage: bootstrap.workspace.stage,
+          mission: bootstrap.workspace.mission,
+          primary_kpi: bootstrap.workspace.primary_kpi,
+          summary: bootstrap.workspace.summary,
+        });
+        const initialAgent = bootstrap.agents[0];
+        if (initialAgent) {
+          setSelectedAgentId(initialAgent.id);
+          setAgentForm({
+            budget: initialAgent.budget,
+            permissions: initialAgent.permissions.join(", "),
+            escalation_rule: initialAgent.escalation_rule,
+          });
         }
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Unknown error");
@@ -228,6 +301,63 @@ function App() {
       .map((skillId) => data.skills.find((skill) => skill.id === skillId))
       .filter(Boolean) as SkillDefinition[];
   }, [data, selectedApp]);
+
+  const selectedAgent = useMemo(
+    () => data?.agents.find((agent) => agent.id === selectedAgentId) ?? data?.agents[0],
+    [data?.agents, selectedAgentId],
+  );
+
+  const strategyWorkflows = useMemo(
+    () => data?.workflows.filter((workflow) => workflow.module === "strategy") ?? [],
+    [data?.workflows],
+  );
+
+  const executionWorkflows = useMemo(
+    () => data?.workflows.filter((workflow) => workflow.module === "execution") ?? [],
+    [data?.workflows],
+  );
+
+  useEffect(() => {
+    if (!data) {
+      return;
+    }
+    setWorkspaceForm({
+      company_name: data.workspace.company_name,
+      founder_name: data.workspace.founder_name,
+      stage: data.workspace.stage,
+      mission: data.workspace.mission,
+      primary_kpi: data.workspace.primary_kpi,
+      summary: data.workspace.summary,
+    });
+  }, [data?.workspace]);
+
+  useEffect(() => {
+    if (!data) {
+      return;
+    }
+    setInvestorDrafts(
+      Object.fromEntries(
+        data.fundraise_pipeline.investors.map((investor) => [
+          investor.id,
+          {
+            relationship_status: investor.relationship_status,
+            next_step: investor.next_step,
+          },
+        ]),
+      ),
+    );
+  }, [data?.fundraise_pipeline.investors]);
+
+  useEffect(() => {
+    if (!selectedAgent) {
+      return;
+    }
+    setAgentForm({
+      budget: selectedAgent.budget,
+      permissions: selectedAgent.permissions.join(", "),
+      escalation_rule: selectedAgent.escalation_rule,
+    });
+  }, [selectedAgent]);
 
   useEffect(() => {
     if (selectedArtifact) {
@@ -335,6 +465,39 @@ function App() {
           : current.task_runs,
       };
     });
+  };
+
+  const reloadWorkspace = async (options?: {
+    preferredModule?: ModuleKey;
+    preferredArtifactId?: string;
+    preferredAppId?: string;
+  }) => {
+    const bootstrap = await fetchBootstrap();
+    setData(bootstrap);
+
+    const nextArtifactId =
+      options?.preferredArtifactId && bootstrap.artifacts.some((artifact) => artifact.id === options.preferredArtifactId)
+        ? options.preferredArtifactId
+        : selectedArtifactId && bootstrap.artifacts.some((artifact) => artifact.id === selectedArtifactId)
+          ? selectedArtifactId
+          : bootstrap.artifacts[0]?.id ?? "";
+    setSelectedArtifactId(nextArtifactId);
+    const nextArtifact = bootstrap.artifacts.find((artifact) => artifact.id === nextArtifactId);
+    if (nextArtifact) {
+      setArtifactDraft(nextArtifact.content);
+    }
+
+    const nextAppId =
+      options?.preferredAppId && bootstrap.apps.some((app) => app.id === options.preferredAppId)
+        ? options.preferredAppId
+        : selectedAppId && bootstrap.apps.some((app) => app.id === selectedAppId)
+          ? selectedAppId
+          : bootstrap.apps[0]?.id ?? "";
+    setSelectedAppId(nextAppId);
+
+    if (options?.preferredModule) {
+      setActiveModule(options.preferredModule);
+    }
   };
 
   const handleSendMessage = async (message: string) => {
@@ -532,6 +695,173 @@ function App() {
       setError(publishError instanceof Error ? publishError.message : "Unable to publish investor room");
     } finally {
       setIsPublishingRoom(false);
+    }
+  };
+
+  const handleWorkspaceSetup = async () => {
+    try {
+      setIsSubmittingPanel(true);
+      await updateWorkspace(workspaceForm);
+      await reloadWorkspace();
+      setActionNotice("Workspace settings updated.");
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Unable to update workspace");
+    } finally {
+      setIsSubmittingPanel(false);
+    }
+  };
+
+  const handleCreateGoal = async () => {
+    try {
+      setIsSubmittingPanel(true);
+      await createGoal(goalForm);
+      await reloadWorkspace({ preferredModule: "strategy" });
+      setGoalForm((current) => ({ ...current, title: "", kpi: "" }));
+      setActionNotice("Strategic goal added.");
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Unable to create goal");
+    } finally {
+      setIsSubmittingPanel(false);
+    }
+  };
+
+  const handleGoalStatusChange = async (goalId: string, status: string) => {
+    try {
+      setIsSubmittingPanel(true);
+      await updateGoal(goalId, status);
+      await reloadWorkspace({ preferredModule: "strategy" });
+      setActionNotice("Goal status updated.");
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Unable to update goal");
+    } finally {
+      setIsSubmittingPanel(false);
+    }
+  };
+
+  const handleAddKnowledgeSource = async () => {
+    try {
+      setIsSubmittingPanel(true);
+      await createKnowledgeSource(knowledgeForm);
+      await reloadWorkspace({ preferredModule: "strategy" });
+      setKnowledgeForm({
+        title: "",
+        source_type: "doc",
+        status: "Connected",
+        freshness: "Today",
+      });
+      setActionNotice("Knowledge source connected.");
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Unable to add knowledge source");
+    } finally {
+      setIsSubmittingPanel(false);
+    }
+  };
+
+  const handleSaveAgent = async () => {
+    if (!selectedAgent) {
+      return;
+    }
+
+    try {
+      setIsSubmittingPanel(true);
+      await updateAgent(selectedAgent.id, {
+        budget: agentForm.budget,
+        permissions: agentForm.permissions
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean),
+        escalation_rule: agentForm.escalation_rule,
+      });
+      await reloadWorkspace({ preferredModule: "team" });
+      setActionNotice(`${selectedAgent.name} updated.`);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Unable to update agent");
+    } finally {
+      setIsSubmittingPanel(false);
+    }
+  };
+
+  const handleLaunchWorkflow = async (workflowId: string, module: ModuleKey) => {
+    try {
+      setIsSubmittingPanel(true);
+      const response = await launchWorkflow(
+        workflowId,
+        workflowNote.trim() || "Use the current workspace context and produce a founder-ready output.",
+      );
+      await reloadWorkspace({
+        preferredModule: module,
+        preferredArtifactId: response.artifact?.id,
+      });
+      setWorkflowNote("");
+      setSelectedArtifactId(response.artifact?.id ?? selectedArtifactId);
+      if (response.artifact) {
+        setArtifactDraft(response.artifact.content);
+      }
+      setActionNotice(response.message);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Unable to launch workflow");
+    } finally {
+      setIsSubmittingPanel(false);
+    }
+  };
+
+  const handleCreateInvestor = async () => {
+    try {
+      setIsSubmittingPanel(true);
+      await createFundraiseInvestor(investorForm);
+      await reloadWorkspace({ preferredModule: "capital" });
+      setInvestorForm({
+        name: "",
+        thesis: "",
+        stage_fit: "Seed",
+        relationship_status: "New",
+        next_step: "",
+      });
+      setActionNotice("Investor added to pipeline.");
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Unable to add investor");
+    } finally {
+      setIsSubmittingPanel(false);
+    }
+  };
+
+  const handleInvestorUpdate = async (
+    investorId: string,
+    relationshipStatus: string,
+    nextStep: string,
+  ) => {
+    try {
+      setIsSubmittingPanel(true);
+      await updateFundraiseInvestor(investorId, {
+        relationship_status: relationshipStatus,
+        next_step: nextStep,
+      });
+      await reloadWorkspace({ preferredModule: "capital" });
+      setActionNotice("Investor status updated.");
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Unable to update investor");
+    } finally {
+      setIsSubmittingPanel(false);
+    }
+  };
+
+  const handleCreateContact = async () => {
+    try {
+      setIsSubmittingPanel(true);
+      await createContact(contactForm);
+      await reloadWorkspace({ preferredModule: "capital" });
+      setContactForm({
+        name: "",
+        category: "Advisor",
+        company: "",
+        relationship_stage: "New",
+        last_touch: "",
+      });
+      setActionNotice("Relationship added to workspace.");
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Unable to add relationship");
+    } finally {
+      setIsSubmittingPanel(false);
     }
   };
 
@@ -751,6 +1081,101 @@ function App() {
                     </article>
 
                     <div className="stack-column">
+                      <article className="surface-card">
+                        <div className="panel-header">
+                          <div>
+                            <p className="section-kicker">Workspace setup</p>
+                            <h3>Founder operating context</h3>
+                          </div>
+                        </div>
+                        <div className="form-grid">
+                          <label className="field">
+                            <span>Company</span>
+                            <input
+                              value={workspaceForm.company_name}
+                              onChange={(event) =>
+                                setWorkspaceForm((current) => ({
+                                  ...current,
+                                  company_name: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                          <label className="field">
+                            <span>Founder</span>
+                            <input
+                              value={workspaceForm.founder_name}
+                              onChange={(event) =>
+                                setWorkspaceForm((current) => ({
+                                  ...current,
+                                  founder_name: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                          <label className="field">
+                            <span>Stage</span>
+                            <input
+                              value={workspaceForm.stage}
+                              onChange={(event) =>
+                                setWorkspaceForm((current) => ({
+                                  ...current,
+                                  stage: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                          <label className="field">
+                            <span>Primary KPI</span>
+                            <input
+                              value={workspaceForm.primary_kpi}
+                              onChange={(event) =>
+                                setWorkspaceForm((current) => ({
+                                  ...current,
+                                  primary_kpi: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                          <label className="field field-full">
+                            <span>Mission</span>
+                            <textarea
+                              rows={3}
+                              value={workspaceForm.mission}
+                              onChange={(event) =>
+                                setWorkspaceForm((current) => ({
+                                  ...current,
+                                  mission: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                          <label className="field field-full">
+                            <span>Summary</span>
+                            <textarea
+                              rows={3}
+                              value={workspaceForm.summary}
+                              onChange={(event) =>
+                                setWorkspaceForm((current) => ({
+                                  ...current,
+                                  summary: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                        </div>
+                        <div className="button-row">
+                          <button
+                            className="primary-action"
+                            disabled={isSubmittingPanel}
+                            onClick={() => void handleWorkspaceSetup()}
+                            type="button"
+                          >
+                            {isSubmittingPanel ? "Saving..." : "Update workspace"}
+                          </button>
+                        </div>
+                      </article>
+
                       <article className="surface-card approval-card">
                         <div className="panel-header">
                           <div>
@@ -857,7 +1282,21 @@ function App() {
                               <strong>{goal.title}</strong>
                               <p>{goal.kpi}</p>
                             </div>
-                            <span className="status-pill">{goal.status}</span>
+                            <div className="list-side">
+                              <select
+                                className="inline-select"
+                                value={goal.status}
+                                onChange={(event) =>
+                                  void handleGoalStatusChange(goal.id, event.target.value)
+                                }
+                              >
+                                {["Planned", "Ready", "In flight", "Planning", "Done"].map((status) => (
+                                  <option key={status} value={status}>
+                                    {status}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -888,8 +1327,133 @@ function App() {
                               <strong>{workflow.title}</strong>
                               <p>{workflow.description}</p>
                               <small>{workflow.outputs.join(" · ")}</small>
+                              <button
+                                className="inline-link"
+                                onClick={() => void handleLaunchWorkflow(workflow.id, workflow.module)}
+                                type="button"
+                              >
+                                Launch workflow
+                              </button>
                             </div>
                           ))}
+                      </div>
+                    </article>
+                  </section>
+
+                  <section className="two-column">
+                    <article className="surface-card">
+                      <p className="section-kicker">Add strategic goal</p>
+                      <div className="form-grid">
+                        <label className="field field-full">
+                          <span>Goal title</span>
+                          <input
+                            value={goalForm.title}
+                            onChange={(event) =>
+                              setGoalForm((current) => ({ ...current, title: event.target.value }))
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Owner</span>
+                          <input
+                            value={goalForm.owner}
+                            onChange={(event) =>
+                              setGoalForm((current) => ({ ...current, owner: event.target.value }))
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>KPI</span>
+                          <input
+                            value={goalForm.kpi}
+                            onChange={(event) =>
+                              setGoalForm((current) => ({ ...current, kpi: event.target.value }))
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Due date</span>
+                          <input
+                            value={goalForm.due_date}
+                            onChange={(event) =>
+                              setGoalForm((current) => ({ ...current, due_date: event.target.value }))
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Status</span>
+                          <select
+                            value={goalForm.status}
+                            onChange={(event) =>
+                              setGoalForm((current) => ({ ...current, status: event.target.value }))
+                            }
+                          >
+                            {["Planned", "Ready", "In flight", "Planning"].map((status) => (
+                              <option key={status} value={status}>
+                                {status}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                      <div className="button-row">
+                        <button
+                          className="primary-action"
+                          disabled={isSubmittingPanel || !goalForm.title || !goalForm.kpi}
+                          onClick={() => void handleCreateGoal()}
+                          type="button"
+                        >
+                          {isSubmittingPanel ? "Saving..." : "Add goal"}
+                        </button>
+                      </div>
+                    </article>
+
+                    <article className="surface-card">
+                      <p className="section-kicker">Connect knowledge</p>
+                      <div className="form-grid">
+                        <label className="field field-full">
+                          <span>Source title</span>
+                          <input
+                            value={knowledgeForm.title}
+                            onChange={(event) =>
+                              setKnowledgeForm((current) => ({ ...current, title: event.target.value }))
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Source type</span>
+                          <select
+                            value={knowledgeForm.source_type}
+                            onChange={(event) =>
+                              setKnowledgeForm((current) => ({ ...current, source_type: event.target.value }))
+                            }
+                          >
+                            {["doc", "notes", "crm", "drive", "transcript"].map((value) => (
+                              <option key={value} value={value}>
+                                {value}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="field">
+                          <span>Freshness</span>
+                          <input
+                            value={knowledgeForm.freshness}
+                            onChange={(event) =>
+                              setKnowledgeForm((current) => ({ ...current, freshness: event.target.value }))
+                            }
+                          />
+                        </label>
+                      </div>
+                      <div className="button-row">
+                        <button
+                          className="primary-action"
+                          disabled={isSubmittingPanel || !knowledgeForm.title}
+                          onClick={() => void handleAddKnowledgeSource()}
+                          type="button"
+                        >
+                          {isSubmittingPanel ? "Saving..." : "Add source"}
+                        </button>
                       </div>
                     </article>
                   </section>
@@ -940,6 +1504,71 @@ function App() {
                       </article>
                     ))}
                   </section>
+
+                  <section className="surface-card">
+                    <div className="panel-header">
+                      <div>
+                        <p className="section-kicker">Agent controls</p>
+                        <h3>Guardrails and budgets</h3>
+                      </div>
+                    </div>
+                    <div className="form-grid">
+                      <label className="field">
+                        <span>Agent</span>
+                        <select
+                          value={selectedAgent?.id ?? ""}
+                          onChange={(event) => setSelectedAgentId(event.target.value)}
+                        >
+                          {data.agents.map((agent) => (
+                            <option key={agent.id} value={agent.id}>
+                              {agent.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="field">
+                        <span>Budget</span>
+                        <input
+                          value={agentForm.budget}
+                          onChange={(event) =>
+                            setAgentForm((current) => ({ ...current, budget: event.target.value }))
+                          }
+                        />
+                      </label>
+                      <label className="field field-full">
+                        <span>Permissions</span>
+                        <input
+                          value={agentForm.permissions}
+                          onChange={(event) =>
+                            setAgentForm((current) => ({ ...current, permissions: event.target.value }))
+                          }
+                        />
+                      </label>
+                      <label className="field field-full">
+                        <span>Escalation rule</span>
+                        <textarea
+                          rows={3}
+                          value={agentForm.escalation_rule}
+                          onChange={(event) =>
+                            setAgentForm((current) => ({
+                              ...current,
+                              escalation_rule: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+                    <div className="button-row">
+                      <button
+                        className="primary-action"
+                        disabled={isSubmittingPanel || !selectedAgent}
+                        onClick={() => void handleSaveAgent()}
+                        type="button"
+                      >
+                        {isSubmittingPanel ? "Saving..." : "Save agent settings"}
+                      </button>
+                    </div>
+                  </section>
                 </>
               )}
 
@@ -988,10 +1617,46 @@ function App() {
                               <strong>{workflow.title}</strong>
                               <p>{workflow.description}</p>
                               <small>{workflow.outputs.join(" · ")}</small>
+                              <button
+                                className="inline-link"
+                                onClick={() => void handleLaunchWorkflow(workflow.id, workflow.module)}
+                                type="button"
+                              >
+                                Launch workflow
+                              </button>
                             </div>
                           ))}
                       </div>
                     </article>
+                  </section>
+
+                  <section className="surface-card">
+                    <div className="panel-header">
+                      <div>
+                        <p className="section-kicker">Workflow runner</p>
+                        <h3>Launch the next cadence with context</h3>
+                      </div>
+                    </div>
+                    <textarea
+                      className="composer-input"
+                      rows={4}
+                      placeholder="Add a note for the next workflow run..."
+                      value={workflowNote}
+                      onChange={(event) => setWorkflowNote(event.target.value)}
+                    />
+                    <div className="button-row">
+                      {executionWorkflows.map((workflow) => (
+                        <button
+                          key={workflow.id}
+                          className="ghost-action"
+                          disabled={isSubmittingPanel}
+                          onClick={() => void handleLaunchWorkflow(workflow.id, workflow.module)}
+                          type="button"
+                        >
+                          {workflow.title}
+                        </button>
+                      ))}
+                    </div>
                   </section>
                 </>
               )}
@@ -1181,11 +1846,193 @@ function App() {
                                   <p>{investor.thesis}</p>
                                 </div>
                                 <div className="list-side">
-                                  <span className="status-pill">{investor.relationship_status}</span>
-                                  <small>{investor.next_step}</small>
+                                  <select
+                                    className="inline-select"
+                                    value={
+                                      investorDrafts[investor.id]?.relationship_status ??
+                                      investor.relationship_status
+                                    }
+                                    onChange={(event) =>
+                                      setInvestorDrafts((current) => ({
+                                        ...current,
+                                        [investor.id]: {
+                                          relationship_status: event.target.value,
+                                          next_step:
+                                            current[investor.id]?.next_step ?? investor.next_step,
+                                        },
+                                      }))
+                                    }
+                                  >
+                                    {["New", "Researching", "Warm", "Active", "Meeting", "Closed"].map((status) => (
+                                      <option key={status} value={status}>
+                                        {status}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <input
+                                    value={investorDrafts[investor.id]?.next_step ?? investor.next_step}
+                                    onChange={(event) =>
+                                      setInvestorDrafts((current) => ({
+                                        ...current,
+                                        [investor.id]: {
+                                          relationship_status:
+                                            current[investor.id]?.relationship_status ??
+                                            investor.relationship_status,
+                                          next_step: event.target.value,
+                                        },
+                                      }))
+                                    }
+                                  />
+                                  <button
+                                    className="inline-link"
+                                    onClick={() =>
+                                      void handleInvestorUpdate(
+                                        investor.id,
+                                        investorDrafts[investor.id]?.relationship_status ??
+                                          investor.relationship_status,
+                                        investorDrafts[investor.id]?.next_step ?? investor.next_step,
+                                      )
+                                    }
+                                    type="button"
+                                  >
+                                    Save
+                                  </button>
                                 </div>
                               </div>
                             ))}
+                          </div>
+                        </article>
+                      </section>
+
+                      <section className="two-column">
+                        <article className="surface-card">
+                          <p className="section-kicker">Add investor</p>
+                          <div className="form-grid">
+                            <label className="field">
+                              <span>Name</span>
+                              <input
+                                value={investorForm.name}
+                                onChange={(event) =>
+                                  setInvestorForm((current) => ({ ...current, name: event.target.value }))
+                                }
+                              />
+                            </label>
+                            <label className="field">
+                              <span>Stage fit</span>
+                              <input
+                                value={investorForm.stage_fit}
+                                onChange={(event) =>
+                                  setInvestorForm((current) => ({ ...current, stage_fit: event.target.value }))
+                                }
+                              />
+                            </label>
+                            <label className="field field-full">
+                              <span>Thesis</span>
+                              <input
+                                value={investorForm.thesis}
+                                onChange={(event) =>
+                                  setInvestorForm((current) => ({ ...current, thesis: event.target.value }))
+                                }
+                              />
+                            </label>
+                            <label className="field">
+                              <span>Relationship</span>
+                              <select
+                                value={investorForm.relationship_status}
+                                onChange={(event) =>
+                                  setInvestorForm((current) => ({
+                                    ...current,
+                                    relationship_status: event.target.value,
+                                  }))
+                                }
+                              >
+                                {["New", "Researching", "Warm", "Active", "Meeting"].map((status) => (
+                                  <option key={status} value={status}>
+                                    {status}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="field field-full">
+                              <span>Next step</span>
+                              <input
+                                value={investorForm.next_step}
+                                onChange={(event) =>
+                                  setInvestorForm((current) => ({ ...current, next_step: event.target.value }))
+                                }
+                              />
+                            </label>
+                          </div>
+                          <div className="button-row">
+                            <button
+                              className="primary-action"
+                              disabled={isSubmittingPanel || !investorForm.name || !investorForm.next_step}
+                              onClick={() => void handleCreateInvestor()}
+                              type="button"
+                            >
+                              {isSubmittingPanel ? "Saving..." : "Add investor"}
+                            </button>
+                          </div>
+                        </article>
+
+                        <article className="surface-card">
+                          <p className="section-kicker">Add relationship</p>
+                          <div className="form-grid">
+                            <label className="field">
+                              <span>Name</span>
+                              <input
+                                value={contactForm.name}
+                                onChange={(event) =>
+                                  setContactForm((current) => ({ ...current, name: event.target.value }))
+                                }
+                              />
+                            </label>
+                            <label className="field">
+                              <span>Category</span>
+                              <select
+                                value={contactForm.category}
+                                onChange={(event) =>
+                                  setContactForm((current) => ({ ...current, category: event.target.value }))
+                                }
+                              >
+                                {["Advisor", "Investor", "Partner", "Customer"].map((value) => (
+                                  <option key={value} value={value}>
+                                    {value}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="field">
+                              <span>Company</span>
+                              <input
+                                value={contactForm.company}
+                                onChange={(event) =>
+                                  setContactForm((current) => ({ ...current, company: event.target.value }))
+                                }
+                              />
+                            </label>
+                            <label className="field">
+                              <span>Stage</span>
+                              <input
+                                value={contactForm.relationship_stage}
+                                onChange={(event) =>
+                                  setContactForm((current) => ({
+                                    ...current,
+                                    relationship_stage: event.target.value,
+                                  }))
+                                }
+                              />
+                            </label>
+                          </div>
+                          <div className="button-row">
+                            <button
+                              className="primary-action"
+                              disabled={isSubmittingPanel || !contactForm.name || !contactForm.company}
+                              onClick={() => void handleCreateContact()}
+                              type="button"
+                            >
+                              {isSubmittingPanel ? "Saving..." : "Add relationship"}
+                            </button>
                           </div>
                         </article>
                       </section>

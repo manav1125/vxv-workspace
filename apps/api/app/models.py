@@ -230,6 +230,66 @@ class ChatRequest(BaseModel):
     selected_artifact_id: Optional[str] = None
 
 
+class WorkspaceSetupRequest(BaseModel):
+    company_name: str = Field(min_length=1, max_length=120)
+    founder_name: str = Field(min_length=1, max_length=120)
+    stage: str = Field(min_length=1, max_length=80)
+    mission: str = Field(min_length=1, max_length=400)
+    primary_kpi: str = Field(min_length=1, max_length=120)
+    summary: str = Field(min_length=1, max_length=500)
+
+
+class GoalCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    owner: str = Field(min_length=1, max_length=120)
+    kpi: str = Field(min_length=1, max_length=160)
+    due_date: str = Field(min_length=1, max_length=40)
+    linked_agents: List[str] = Field(default_factory=list)
+    status: str = Field(default="Planned", min_length=1, max_length=60)
+
+
+class GoalUpdateRequest(BaseModel):
+    status: str = Field(min_length=1, max_length=60)
+
+
+class KnowledgeSourceCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=160)
+    source_type: str = Field(min_length=1, max_length=80)
+    status: str = Field(default="Connected", min_length=1, max_length=80)
+    freshness: str = Field(default="Today", min_length=1, max_length=80)
+
+
+class AgentUpdateRequest(BaseModel):
+    budget: str = Field(min_length=1, max_length=80)
+    permissions: List[str] = Field(default_factory=list)
+    escalation_rule: str = Field(min_length=1, max_length=240)
+
+
+class ContactCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    category: str = Field(min_length=1, max_length=80)
+    company: str = Field(min_length=1, max_length=120)
+    relationship_stage: str = Field(min_length=1, max_length=80)
+    last_touch: Optional[str] = Field(default=None, max_length=40)
+
+
+class FundraiseInvestorCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    thesis: str = Field(min_length=1, max_length=200)
+    stage_fit: str = Field(min_length=1, max_length=80)
+    relationship_status: str = Field(min_length=1, max_length=80)
+    next_step: str = Field(min_length=1, max_length=200)
+
+
+class FundraiseInvestorUpdateRequest(BaseModel):
+    relationship_status: str = Field(min_length=1, max_length=80)
+    next_step: str = Field(min_length=1, max_length=200)
+
+
+class WorkflowLaunchRequest(BaseModel):
+    note: str = Field(min_length=1, max_length=4000)
+
+
 class ChatResponse(BaseModel):
     reply: ChatMessage
     active_agent: AgentProfile

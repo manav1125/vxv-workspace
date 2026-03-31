@@ -57,10 +57,18 @@ It also now supports basic stateful founder actions:
 - launch an app into a tracked run
 - save artifact edits through the API
 - approve, revise, or reject approval-gated runs
+- update workspace setup and founder operating context
+- create and update strategic goals
+- connect knowledge sources
+- update agent budgets, permissions, and escalation rules
+- launch workflows into tracked runs and artifacts
+- add and update investor pipeline entries
+- add broader relationship contacts into the workspace CRM layer
 
 When optional runtime dependencies and model credentials are present, the
 chat path can also use a real AgentScope `DialogAgent` instead of the fallback
-template response layer.
+template response layer. The same runtime adapter now powers workflow and app
+artifact generation when model credentials are present.
 
 That means we can replace the demo orchestrator with AgentScope Runtime execution without rewriting the frontend contract.
 
@@ -130,8 +138,9 @@ The intended environment variables are:
 - Web service:
   - `VITE_API_BASE_URL` set to the public URL of the API service
 
-Today this is best treated as a staging deployment, because the backend store is
-still in-memory and resets on restart or redeploy.
+Today this is best treated as a staging deployment. The backend now persists to a
+JSON-backed store on disk, which is better than pure in-memory state, but it is
+not yet a production-grade multi-user persistence layer.
 
 ## Notes
 

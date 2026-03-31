@@ -45,6 +45,10 @@ def _message_id() -> str:
     return f"msg-{uuid4().hex[:8]}"
 
 
+def _entity_id(prefix: str) -> str:
+    return f"{prefix}-{uuid4().hex[:8]}"
+
+
 @dataclass
 class DemoStore:
     workspace: Workspace = field(default_factory=lambda: Workspace(
@@ -608,6 +612,163 @@ class DemoStore:
         if app is None:
             raise KeyError(f"Unknown app: {app_id}")
         return app
+
+    def get_goal(self, goal_id: str) -> Goal:
+        goal = next((item for item in self.goals if item.id == goal_id), None)
+        if goal is None:
+            raise KeyError(f"Unknown goal: {goal_id}")
+        return goal
+
+    def get_agent(self, agent_id: str) -> AgentProfile:
+        agent = next((item for item in self.agents if item.id == agent_id), None)
+        if agent is None:
+            raise KeyError(f"Unknown agent: {agent_id}")
+        return agent
+
+    def get_workflow(self, workflow_id: str) -> WorkflowDefinition:
+        workflow = next((item for item in self.workflows if item.id == workflow_id), None)
+        if workflow is None:
+            raise KeyError(f"Unknown workflow: {workflow_id}")
+        return workflow
+
+    def get_fundraise_investor(self, investor_id: str) -> FundraiseInvestor:
+        investor = next((item for item in self.fundraise_pipeline.investors if item.id == investor_id), None)
+        if investor is None:
+            raise KeyError(f"Unknown fundraise investor: {investor_id}")
+        return investor
+
+    def update_workspace(
+        self,
+        *,
+        company_name: str,
+        founder_name: str,
+        stage: str,
+        mission: str,
+        primary_kpi: str,
+        summary: str,
+    ) -> Workspace:
+        self.workspace.company_name = company_name
+        self.workspace.founder_name = founder_name
+        self.workspace.stage = stage
+        self.workspace.mission = mission
+        self.workspace.primary_kpi = primary_kpi
+        self.workspace.summary = summary
+        self.persist()
+        return self.workspace
+
+    def add_goal(
+        self,
+        *,
+        title: str,
+        owner: str,
+        kpi: str,
+        due_date: str,
+        linked_agents: List[str],
+        status: str,
+    ) -> Goal:
+        goal = Goal(
+            id=_entity_id("goal"),
+            title=title,
+            owner=owner,
+            kpi=kpi,
+            due_date=due_date,
+            linked_agents=linked_agents,
+            status=status,
+        )
+        self.goals.insert(0, goal)
+        self.persist()
+        return goal
+
+    def update_goal_status(self, goal_id: str, status: str) -> Goal:
+        goal = self.get_goal(goal_id)
+        goal.status = status
+        self.persist()
+        return goal
+
+    def add_knowledge_source(self, *, title: str, source_type: str, status: str, freshness: str) -> KnowledgeSource:
+        source = KnowledgeSource(
+            id=_entity_id("ks"),
+            title=title,
+            source_type=source_type,
+            status=status,
+            freshness=freshness,
+        )
+        self.knowledge_sources.insert(0, source)
+        self.persist()
+        return source
+
+    def update_agent(self, *, agent_id: str, budget: str, permissions: List[str], escalation_rule: str) -> AgentProfile:
+        agent = self.get_agent(agent_id)
+        agent.budget = budget
+        agent.permissions = permissions
+        agent.escalation_rule = escalation_rule
+        self.persist()
+        return agent
+
+    def add_contact(
+        self,
+        *,
+        name: str,
+        category: str,
+        company: str,
+        relationship_stage: str,
+        last_touch: str,
+    ) -> Contact:
+        contact = Contact(
+            id=_entity_id("contact"),
+            name=name,
+            category=category,
+            company=company,
+            relationship_stage=relationship_stage,
+            last_touch=last_touch,
+        )
+        self.contacts.insert(0, contact)
+        self.persist()
+        return contact
+
+    def add_fundraise_investor(
+        self,
+        *,
+        name: str,
+        thesis: str,
+        stage_fit: str,
+        relationship_status: str,
+        next_step: str,
+    ) -> FundraiseInvestor:
+        investor = FundraiseInvestor(
+            id=_entity_id("investor"),
+            name=name,
+            thesis=thesis,
+            stage_fit=stage_fit,
+            relationship_status=relationship_status,
+            next_step=next_step,
+        )
+        self.fundraise_pipeline.investors.insert(0, investor)
+        self.contacts.insert(
+            0,
+            Contact(
+                id=_entity_id("contact"),
+                name=name,
+                category="Investor",
+                company=self.workspace.company_name,
+                relationship_stage=relationship_status,
+                last_touch=now_iso().split("T", 1)[0],
+            ),
+        )
+        self.persist()
+        return investor
+
+    def update_fundraise_investor(self, *, investor_id: str, relationship_status: str, next_step: str) -> FundraiseInvestor:
+        investor = self.get_fundraise_investor(investor_id)
+        investor.relationship_status = relationship_status
+        investor.next_step = next_step
+        for contact in self.contacts:
+            if contact.name == investor.name and contact.category == "Investor":
+                contact.relationship_stage = relationship_status
+                contact.last_touch = now_iso().split("T", 1)[0]
+                break
+        self.persist()
+        return investor
 
     def update_artifact_content(self, artifact_id: str, content: str) -> Artifact:
         artifact = self.get_artifact(artifact_id)
