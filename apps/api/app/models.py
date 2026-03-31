@@ -251,9 +251,18 @@ class AppLaunchRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=4000)
 
 
+class PublishInvestorRoomRequest(BaseModel):
+    artifact_id: Optional[str] = None
+
+
 class ActionResponse(BaseModel):
     task_run: TaskRun
     artifact: Optional[Artifact] = None
+    message: str
+
+
+class InvestorRoomActionResponse(BaseModel):
+    investor_room: InvestorRoom
     message: str
 
 

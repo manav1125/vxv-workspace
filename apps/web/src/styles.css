@@ -84,6 +84,7 @@ button {
   font-family: "Newsreader", serif;
   font-size: 1.4rem;
   font-weight: 500;
+  color: var(--text);
 }
 
 .brand-subtitle {
@@ -201,6 +202,7 @@ button {
   font-size: clamp(2rem, 3vw, 3.6rem);
   font-weight: 500;
   line-height: 1;
+  color: var(--text);
 }
 
 .section-kicker,
@@ -319,6 +321,7 @@ button {
   font-family: "Newsreader", serif;
   font-size: 1.2rem;
   font-weight: 500;
+  color: var(--text);
 }
 
 .card-grid {
@@ -345,6 +348,18 @@ button {
   font-family: "Newsreader", serif;
   font-size: 1.7rem;
   font-weight: 500;
+  color: var(--text);
+}
+
+.surface-card strong,
+.context-card strong,
+.workflow-row strong,
+.run-card strong,
+.timeline-item strong,
+.artifact-list-item strong,
+.list-row strong,
+.message-bubble strong {
+  color: var(--text);
 }
 
 .inline-link {
@@ -426,6 +441,10 @@ button {
 .prompt-chip:hover {
   color: var(--text);
   border-color: rgba(89, 225, 202, 0.4);
+}
+
+.command-surface {
+  margin-top: 0.25rem;
 }
 
 .composer {

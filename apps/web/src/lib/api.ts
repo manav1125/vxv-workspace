@@ -4,6 +4,7 @@ import type {
   BootstrapResponse,
   ChatRequest,
   ChatResponse,
+  InvestorRoomActionResponse,
 } from "../types";
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
@@ -52,5 +53,12 @@ export function launchApp(appId: string, prompt: string) {
   return api<ActionResponse>(`/api/apps/${appId}/launch`, {
     method: "POST",
     body: JSON.stringify({ prompt }),
+  });
+}
+
+export function publishInvestorRoom(artifactId?: string) {
+  return api<InvestorRoomActionResponse>("/api/investor-room/publish", {
+    method: "POST",
+    body: JSON.stringify({ artifact_id: artifactId }),
   });
 }

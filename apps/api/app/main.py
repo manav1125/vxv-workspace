@@ -14,6 +14,8 @@ from .models import (
     BootstrapResponse,
     ChatRequest,
     ChatResponse,
+    InvestorRoomActionResponse,
+    PublishInvestorRoomRequest,
 )
 from .orchestrator import FounderOrchestrator
 from .store import DemoStore
@@ -133,3 +135,8 @@ def post_app_launch(app_id: str, request: AppLaunchRequest) -> ActionResponse:
 @app.post("/api/chat", response_model=ChatResponse)
 def post_chat(request: ChatRequest) -> ChatResponse:
     return orchestrator.respond(request)
+
+
+@app.post("/api/investor-room/publish", response_model=InvestorRoomActionResponse)
+def post_publish_investor_room(request: PublishInvestorRoomRequest) -> InvestorRoomActionResponse:
+    return orchestrator.publish_investor_room(request)

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import List
 from uuid import uuid4
 
@@ -440,6 +443,58 @@ class DemoStore:
             content="""## Welcome to VXV Workspace\n\nI can coordinate strategy, team leverage, execution rhythms, artifact production, and fundraising prep from one place.\n\nTry asking for:\n- a founder weekly review\n- a GTM experiment plan\n- an investor memo refresh\n""",
         )
     ])
+    state_path: str = field(default_factory=lambda: (
+        ""
+        if os.getenv("PYTEST_CURRENT_TEST") or os.getenv("VXV_DISABLE_PERSISTENCE") == "1"
+        else os.getenv("VXV_STATE_PATH", "/tmp/vxv-workspace-state.json")
+    ))
+
+    def __post_init__(self) -> None:
+        if not self.state_path:
+            return
+        path = Path(self.state_path)
+        if path.exists():
+            self._load(path)
+        else:
+            self.persist()
+
+    def _load(self, path: Path) -> None:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        self.workspace = Workspace.model_validate(payload["workspace"])
+        self.goals = [Goal.model_validate(item) for item in payload["goals"]]
+        self.agents = [AgentProfile.model_validate(item) for item in payload["agents"]]
+        self.skills = [SkillDefinition.model_validate(item) for item in payload["skills"]]
+        self.apps = [WorkspaceApp.model_validate(item) for item in payload["apps"]]
+        self.knowledge_sources = [KnowledgeSource.model_validate(item) for item in payload["knowledge_sources"]]
+        self.contacts = [Contact.model_validate(item) for item in payload["contacts"]]
+        self.artifacts = [Artifact.model_validate(item) for item in payload["artifacts"]]
+        self.task_runs = [TaskRun.model_validate(item) for item in payload["task_runs"]]
+        self.workflows = [WorkflowDefinition.model_validate(item) for item in payload["workflows"]]
+        self.fundraise_pipeline = FundraisePipeline.model_validate(payload["fundraise_pipeline"])
+        self.investor_room = InvestorRoom.model_validate(payload["investor_room"])
+        self.messages = [ChatMessage.model_validate(item) for item in payload["messages"]]
+
+    def persist(self) -> None:
+        if not self.state_path:
+            return
+        path = Path(self.state_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "workspace": self.workspace.model_dump(),
+            "goals": [item.model_dump() for item in self.goals],
+            "agents": [item.model_dump() for item in self.agents],
+            "skills": [item.model_dump() for item in self.skills],
+            "apps": [item.model_dump() for item in self.apps],
+            "knowledge_sources": [item.model_dump() for item in self.knowledge_sources],
+            "contacts": [item.model_dump() for item in self.contacts],
+            "artifacts": [item.model_dump() for item in self.artifacts],
+            "task_runs": [item.model_dump() for item in self.task_runs],
+            "workflows": [item.model_dump() for item in self.workflows],
+            "fundraise_pipeline": self.fundraise_pipeline.model_dump(),
+            "investor_room": self.investor_room.model_dump(),
+            "messages": [item.model_dump() for item in self.messages],
+        }
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     def metrics(self) -> DashboardMetrics:
         return DashboardMetrics(
@@ -480,6 +535,7 @@ class DemoStore:
             created_at=now_iso(),
         )
         self.messages.append(message)
+        self.persist()
         return message
 
     def upsert_artifact(self, title: str, module: ModuleKey, summary: str, content: str, kind: ArtifactKind, linked_run_id: str) -> Artifact:
@@ -492,6 +548,7 @@ class DemoStore:
             existing.kind = kind
             existing.updated_at = updated_at
             existing.linked_run_id = linked_run_id
+            self.persist()
             return existing
         artifact = Artifact(
             id=_artifact_id(),
@@ -504,6 +561,7 @@ class DemoStore:
             linked_run_id=linked_run_id,
         )
         self.artifacts.insert(0, artifact)
+        self.persist()
         return artifact
 
     def add_task_run(
@@ -530,6 +588,7 @@ class DemoStore:
             requires_approval=requires_approval,
         )
         self.task_runs.insert(0, task)
+        self.persist()
         return task
 
     def get_artifact(self, artifact_id: str) -> Artifact:
@@ -554,4 +613,20 @@ class DemoStore:
         artifact = self.get_artifact(artifact_id)
         artifact.content = content
         artifact.updated_at = now_iso()
+        self.persist()
         return artifact
+
+    def publish_investor_room(self, artifact_id: str | None = None) -> InvestorRoom:
+        chosen_artifact_id = artifact_id
+        if chosen_artifact_id is None:
+            capital_artifact = next((artifact for artifact in self.artifacts if artifact.module == ModuleKey.CAPITAL), None)
+            chosen_artifact_id = capital_artifact.id if capital_artifact else None
+
+        if chosen_artifact_id and chosen_artifact_id not in self.investor_room.curated_artifact_ids:
+            self.investor_room.curated_artifact_ids.insert(0, chosen_artifact_id)
+
+        self.investor_room.visibility = "read-only"
+        self.investor_room.update_feed.insert(0, f"Investor room refreshed at {now_iso()}")
+        self.investor_room.update_feed = self.investor_room.update_feed[:6]
+        self.persist()
+        return self.investor_room

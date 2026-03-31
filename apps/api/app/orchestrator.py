@@ -9,7 +9,9 @@ from .models import (
     ArtifactKind,
     ChatRequest,
     ChatResponse,
+    InvestorRoomActionResponse,
     ModuleKey,
+    PublishInvestorRoomRequest,
     TaskStatus,
 )
 from .runtime import AgentScopeRuntimeAdapter
@@ -192,6 +194,7 @@ class FounderOrchestrator:
             message = "The action was rejected and will not proceed."
 
         task.requires_approval = False
+        self.store.persist()
         return ActionResponse(task_run=task, message=message)
 
     def launch_app(self, app_id: str, request: AppLaunchRequest) -> ActionResponse:
@@ -232,9 +235,17 @@ class FounderOrchestrator:
         )
 
         app.last_run_at = task.created_at
+        self.store.persist()
 
         return ActionResponse(
             task_run=task,
             artifact=artifact,
             message=f"{app.title} launched successfully.",
+        )
+
+    def publish_investor_room(self, request: PublishInvestorRoomRequest) -> InvestorRoomActionResponse:
+        room = self.store.publish_investor_room(request.artifact_id)
+        return InvestorRoomActionResponse(
+            investor_room=room,
+            message="Investor room updated and ready to share.",
         )

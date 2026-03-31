@@ -7,7 +7,7 @@ export type ModuleKey =
   | "capital"
   | "apps";
 
-export type TaskStatus = "queued" | "running" | "waiting" | "completed";
+export type TaskStatus = "queued" | "running" | "waiting" | "completed" | "rejected";
 
 export type ArtifactKind = "plan" | "memo" | "report" | "brief" | "deck" | "crm";
 
@@ -212,5 +212,10 @@ export interface ChatResponse {
 export interface ActionResponse {
   task_run: TaskRun;
   artifact?: Artifact | null;
+  message: string;
+}
+
+export interface InvestorRoomActionResponse {
+  investor_room: InvestorRoom;
   message: string;
 }

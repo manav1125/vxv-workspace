@@ -1,4 +1,3 @@
-import { Button, ConfigProvider, carbonTheme } from "@agentscope-ai/design";
 import { Markdown } from "@agentscope-ai/chat";
 import { useEffect, useMemo, useState } from "react";
 
@@ -6,6 +5,7 @@ import {
   decideApproval,
   fetchBootstrap,
   launchApp,
+  publishInvestorRoom,
   saveArtifact,
   sendFounderMessage,
 } from "./lib/api";
@@ -120,21 +120,29 @@ const founderLaunchCards = [
     title: "Define your first goal",
     body: "Establish the primary metric or objective driving your current cycle.",
     action: "Set objective",
+    module: "strategy" as ModuleKey,
+    prompt: "Turn our founder vision into one primary strategic goal and KPI for the next 90 days.",
   },
   {
     title: "Launch your first AI teammate",
     body: "Select a specialist in analysis, growth, or operations to join the workspace.",
     action: "Select specialization",
+    module: "team" as ModuleKey,
+    prompt: "Design the first AI agent team for VXV with roles, budgets, and escalation rules.",
   },
   {
     title: "Connect company knowledge",
     body: "Ingest docs, meeting transcripts, and project boards to grow workspace memory.",
     action: "Sync data",
+    module: "artifacts" as ModuleKey,
+    prompt: "Draft the first workspace artifact and knowledge ingestion plan for VXV.",
   },
   {
     title: "Start a weekly founder review",
     body: "Establish a structured ritual for progress, blockers, and next moves.",
     action: "Schedule session",
+    module: "execution" as ModuleKey,
+    prompt: "Set up a weekly founder review cadence with KPIs, blockers, and decision checkpoints.",
   },
 ];
 
@@ -171,6 +179,7 @@ function App() {
   const [isSavingArtifact, setIsSavingArtifact] = useState(false);
   const [isLaunchingApp, setIsLaunchingApp] = useState(false);
   const [isDecidingApproval, setIsDecidingApproval] = useState(false);
+  const [isPublishingRoom, setIsPublishingRoom] = useState(false);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -386,6 +395,19 @@ function App() {
     }
   };
 
+  const handleLaunchCard = (module: ModuleKey, prompt: string) => {
+    setActiveModule(module);
+    setComposerDraft(prompt);
+
+    if (module === "capital") {
+      setCapitalSurface("workspace");
+    }
+
+    if (module === "apps") {
+      setAppSurface("run");
+    }
+  };
+
   const handleSaveArtifact = async () => {
     if (!selectedArtifact) {
       return;
@@ -485,6 +507,34 @@ function App() {
     }
   };
 
+  const handlePublishInvestorRoom = async () => {
+    if (!data) {
+      return;
+    }
+
+    try {
+      setIsPublishingRoom(true);
+      const response = await publishInvestorRoom(selectedArtifact?.id);
+      setData((current) => {
+        if (!current) {
+          return current;
+        }
+
+        return {
+          ...current,
+          investor_room: response.investor_room,
+        };
+      });
+      setActiveModule("capital");
+      setCapitalSurface("investor-room");
+      setActionNotice(response.message);
+    } catch (publishError) {
+      setError(publishError instanceof Error ? publishError.message : "Unable to publish investor room");
+    } finally {
+      setIsPublishingRoom(false);
+    }
+  };
+
   const handleModuleSelect = (module: ModuleKey) => {
     setActiveModule(module);
     if (module !== "capital") {
@@ -520,7 +570,6 @@ function App() {
   const activeModuleMeta = moduleMeta[activeModule];
 
   return (
-    <ConfigProvider theme={carbonTheme.theme}>
       <div className="vxv-shell">
         <aside className="workspace-nav">
           <div className="brand-stack">
@@ -574,7 +623,14 @@ function App() {
               {data.integrations.runtime_provider ? (
                 <div className="topbar-pill">{data.integrations.runtime_provider}</div>
               ) : null}
-              <Button type="primary">Publish investor room</Button>
+              <button
+                className="primary-action"
+                disabled={isPublishingRoom}
+                onClick={() => void handlePublishInvestorRoom()}
+                type="button"
+              >
+                {isPublishingRoom ? "Publishing..." : "Publish investor room"}
+              </button>
             </div>
           </header>
 
@@ -618,7 +674,11 @@ function App() {
                         <p className="card-tag">Action</p>
                         <h3>{card.title}</h3>
                         <p>{card.body}</p>
-                        <button className="inline-link" type="button">
+                        <button
+                          className="inline-link"
+                          onClick={() => handleLaunchCard(card.module, card.prompt)}
+                          type="button"
+                        >
                           {card.action}
                         </button>
                       </article>
@@ -672,9 +732,9 @@ function App() {
                           value={composerDraft}
                           onChange={(event) => setComposerDraft(event.target.value)}
                         />
-                        <Button
-                          type="primary"
-                          loading={isSending}
+                        <button
+                          className="primary-action"
+                          disabled={isSending}
                           onClick={() => {
                             const value = composerDraft.trim();
                             if (!value) {
@@ -683,9 +743,10 @@ function App() {
                             setComposerDraft("");
                             void handleSendMessage(value);
                           }}
+                          type="button"
                         >
-                          Send to workspace
-                        </Button>
+                          {isSending ? "Sending..." : "Send to workspace"}
+                        </button>
                       </div>
                     </article>
 
@@ -1096,8 +1157,13 @@ function App() {
                           <h3>{data.fundraise_pipeline.round_name}</h3>
                           <p>{data.fundraise_pipeline.narrative}</p>
                           <div className="button-row">
-                            <button className="primary-action" type="button">
-                              Publish to investor room
+                            <button
+                              className="primary-action"
+                              disabled={isPublishingRoom}
+                              onClick={() => void handlePublishInvestorRoom()}
+                              type="button"
+                            >
+                              {isPublishingRoom ? "Publishing..." : "Publish to investor room"}
                             </button>
                             <button className="ghost-action" type="button">
                               Refresh memo
@@ -1389,6 +1455,70 @@ function App() {
                   )}
                 </>
               )}
+
+              {activeModule !== "inbox" ? (
+                <section className="surface-card command-surface">
+                  <div className="panel-header">
+                    <div>
+                      <p className="section-kicker">Workspace command surface</p>
+                      <h3>Drive the {activeModuleMeta.label.toLowerCase()} module directly.</h3>
+                    </div>
+                  </div>
+                  <p className="section-copy">
+                    Send a founder request from this module and route the output back into the
+                    shared run and artifact layer.
+                  </p>
+                  <div className="prompt-row">
+                    {defaultSuggestions[activeModule].map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        className="prompt-chip"
+                        onClick={() => void handleSendMessage(suggestion)}
+                        type="button"
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="composer">
+                    <textarea
+                      aria-label={`${activeModuleMeta.label} prompt`}
+                      className="composer-input"
+                      placeholder={`Ask VXV to work on ${activeModuleMeta.label.toLowerCase()}...`}
+                      rows={4}
+                      value={composerDraft}
+                      onChange={(event) => setComposerDraft(event.target.value)}
+                    />
+                    <div className="button-row">
+                      <button
+                        className="primary-action"
+                        disabled={isSending}
+                        onClick={() => {
+                          const value = composerDraft.trim();
+                          if (!value) {
+                            return;
+                          }
+                          setComposerDraft("");
+                          void handleSendMessage(value);
+                        }}
+                        type="button"
+                      >
+                        {isSending ? "Sending..." : `Send to ${activeModuleMeta.label}`}
+                      </button>
+                      {activeModule === "capital" ? (
+                        <button
+                          className="ghost-action"
+                          disabled={isPublishingRoom}
+                          onClick={() => void handlePublishInvestorRoom()}
+                          type="button"
+                        >
+                          {isPublishingRoom ? "Publishing..." : "Publish investor room"}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </section>
+              ) : null}
             </main>
 
             <aside className="context-rail">
@@ -1462,7 +1592,6 @@ function App() {
           </div>
         </div>
       </div>
-    </ConfigProvider>
   );
 }
 
