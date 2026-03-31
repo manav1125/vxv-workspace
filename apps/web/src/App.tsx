@@ -18,14 +18,12 @@ import {
 } from "./lib/api";
 import type {
   AppCategory,
-  Artifact,
   AuthSession,
   BootstrapResponse,
   MemoryItem,
   ModuleKey,
   ThreadNode,
   UploadRecord,
-  WorkspaceApp,
 } from "./types";
 
 type PanelState = "artifact" | "app" | "workspace" | null;
@@ -126,10 +124,6 @@ function App() {
     summary: "",
   });
 
-  const [threadNodes, setThreadNodes] = useState<Record<string, ThreadNode[]>>({});
-  const [threadMemory, setThreadMemory] = useState<Record<string, MemoryItem[]>>({});
-  const [threadActions, setThreadActions] = useState<Record<string, string[]>>({});
-
   const loadWorkspace = async (options?: { artifactId?: string; appId?: string }) => {
     const [bootstrap, latestUploads] = await Promise.all([fetchBootstrap(), fetchUploads()]);
     setData(bootstrap);
@@ -201,9 +195,8 @@ function App() {
 
   const messages = data?.messages ?? [];
   const latestAssistantMessage = [...messages].reverse().find((message) => message.role === "assistant") ?? null;
-  const latestNodes = latestAssistantMessage ? threadNodes[latestAssistantMessage.id] ?? [] : [];
-  const latestMemoryHits = latestAssistantMessage ? threadMemory[latestAssistantMessage.id] ?? [] : [];
-  const latestActions = latestAssistantMessage ? threadActions[latestAssistantMessage.id] ?? [] : [];
+  const latestMemoryHits = latestAssistantMessage?.memory_hits ?? [];
+  const latestActions = latestAssistantMessage?.next_actions ?? [];
 
   const selectedArtifact =
     data?.artifacts.find((artifact) => artifact.id === selectedArtifactId) ?? data?.artifacts[0] ?? null;
@@ -298,9 +291,6 @@ function App() {
         selected_artifact_id: selectedArtifactId || undefined,
       });
 
-      setThreadNodes((current) => ({ ...current, [response.reply.id]: response.nodes }));
-      setThreadMemory((current) => ({ ...current, [response.reply.id]: response.memory_hits }));
-      setThreadActions((current) => ({ ...current, [response.reply.id]: response.next_actions }));
       setComposerDraft("");
       setSelectedArtifactId(response.artifact.id);
       if (response.launched_app_id) {
@@ -668,8 +658,8 @@ function App() {
             <div className="thread-card">
               <div className="thread-stream">
                 {messages.map((message) => {
-                  const nodes = threadNodes[message.id] ?? [];
-                  const memoryHits = threadMemory[message.id] ?? [];
+                  const nodes = message.nodes ?? [];
+                  const memoryHits = message.memory_hits ?? [];
                   return (
                     <article
                       key={message.id}

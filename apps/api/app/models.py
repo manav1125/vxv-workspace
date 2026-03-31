@@ -190,6 +190,9 @@ class ChatMessage(BaseModel):
     module: ModuleKey
     content: str
     created_at: str
+    nodes: List["ThreadNode"] = Field(default_factory=list)
+    memory_hits: List[MemoryItem] = Field(default_factory=list)
+    next_actions: List[str] = Field(default_factory=list)
 
 
 class ThreadNode(BaseModel):

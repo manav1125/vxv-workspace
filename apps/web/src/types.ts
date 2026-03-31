@@ -129,6 +129,9 @@ export interface ChatMessage {
   module: ModuleKey;
   content: string;
   created_at: string;
+  nodes: ThreadNode[];
+  memory_hits: MemoryItem[];
+  next_actions: string[];
 }
 
 export interface WorkflowDefinition {

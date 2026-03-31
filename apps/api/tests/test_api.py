@@ -210,6 +210,29 @@ def test_upload_endpoint_ingests_document() -> None:
     assert any(item["filename"] == "founder-notes.txt" for item in uploads_response.json())
 
 
+def test_chat_executes_skill_flow_and_persists_nodes() -> None:
+    headers = auth_headers()
+    response = client.post(
+        "/api/chat",
+        headers=headers,
+        json={
+            "module": "capital",
+            "message": "Review the latest pitch deck and prepare an investor update with diligence checklist.",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["reply"]["author"] == "FundraiseAgent"
+    assert any(node["kind"] == "skill" for node in payload["nodes"])
+    assert any(node["kind"] == "artifact" for node in payload["nodes"])
+    assert any(item["kind"] in {"artifact", "knowledge", "goal", "workspace", "thread", "capital"} for item in payload["memory_hits"])
+
+    bootstrap = client.get("/api/bootstrap", headers=headers).json()
+    latest_assistant = [message for message in bootstrap["messages"] if message["role"] == "assistant"][-1]
+    assert latest_assistant["nodes"]
+    assert latest_assistant["memory_hits"]
+
+
 def test_owner_can_create_workspace_user() -> None:
     headers = auth_headers()
     response = client.post(

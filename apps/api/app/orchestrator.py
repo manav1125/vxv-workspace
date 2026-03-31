@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Tuple
+from typing import Iterable
 
 from .models import (
     ActionResponse,
     AppLaunchRequest,
     ApprovalDecision,
+    Artifact,
     ArtifactKind,
     ChatRequest,
     ChatResponse,
@@ -13,11 +14,13 @@ from .models import (
     MemoryItem,
     ModuleKey,
     PublishInvestorRoomRequest,
+    TaskRun,
     TaskStatus,
     ThreadNode,
     WorkflowLaunchRequest,
 )
 from .runtime import AgentScopeRuntimeAdapter
+from .skill_engine import SkillEngine, SkillExecution
 from .store import DemoStore
 
 
@@ -25,8 +28,21 @@ class FounderOrchestrator:
     def __init__(self, store: DemoStore) -> None:
         self.store = store
         self.runtime = AgentScopeRuntimeAdapter()
+        self.skill_engine = SkillEngine(self.runtime)
 
-    def _select_agent(self, request: ChatRequest):
+    def _select_agent(self, module: ModuleKey, text: str):
+        lowered = text.lower()
+        if any(keyword in lowered for keyword in ["investor", "fundraise", "diligence", "memo", "deck", "pitch"]):
+            return self.store.get_agent("agent-fundraise")
+        if any(keyword in lowered for keyword in ["gtm", "growth", "campaign", "customer", "competitor", "research"]):
+            return self.store.get_agent("agent-research")
+        if any(keyword in lowered for keyword in ["cadence", "ops", "workflow", "review", "blocker"]):
+            return self.store.get_agent("agent-ops")
+        if any(keyword in lowered for keyword in ["hiring", "scorecard", "interview", "team"]):
+            return self.store.get_agent("agent-chief")
+        if any(keyword in lowered for keyword in ["artifact", "board", "summary", "report", "update"]):
+            return self.store.get_agent("agent-analyst")
+
         module_map = {
             ModuleKey.INBOX: "agent-chief",
             ModuleKey.STRATEGY: "agent-research",
@@ -36,166 +52,211 @@ class FounderOrchestrator:
             ModuleKey.CAPITAL: "agent-fundraise",
             ModuleKey.APPS: "agent-chief",
         }
+        return self.store.get_agent(module_map[module])
 
-        text = request.message.lower()
-        if any(keyword in text for keyword in ["investor", "fundraise", "diligence", "memo", "deck", "pitch"]):
-            agent_id = "agent-fundraise"
-        elif any(keyword in text for keyword in ["gtm", "growth", "campaign", "customer"]):
-            agent_id = "agent-growth"
-        elif any(keyword in text for keyword in ["cadence", "ops", "workflow", "review"]):
-            agent_id = "agent-ops"
-        elif any(keyword in text for keyword in ["board", "artifact", "summary", "report"]):
-            agent_id = "agent-analyst"
-        else:
-            agent_id = module_map[request.module]
-
-        return next(agent for agent in self.store.agents if agent.id == agent_id)
-
-    def _artifact_template(self, request: ChatRequest) -> Tuple[str, str, str, ArtifactKind]:
-        message = request.message.strip()
-        lowered = message.lower()
-
-        if request.module == ModuleKey.CAPITAL or "investor" in lowered or "fundraise" in lowered:
-            title = "Investor Memo Refresh"
-            summary = "Fresh investor-facing narrative tied to the unified founder operating system."
-            content = f"""# Investor Memo Refresh\n\n## Ask\n{message}\n\n## Updated narrative\n- VXV is consolidating founder workflows into one operating layer\n- The product now unifies strategy, execution, team leverage, and capital readiness\n- Investor-facing access becomes a curated surface rather than a separate product\n\n## Next actions\n1. Tighten the round narrative around founder throughput\n2. Link the latest roadmap and traction snapshot\n3. Publish a refreshed investor room index\n"""
-            return title, summary, content, ArtifactKind.MEMO
-
-        if request.module == ModuleKey.APPS or "deck" in lowered or "reviewer" in lowered:
-            title = "App Run Output"
-            summary = "Artifact generated from an immersive workflow app inside the workspace."
-            content = f"""# App Run Output\n\n## Trigger\n{message}\n\n## App-layer interpretation\n- The request was routed through a workflow app surface rather than plain chat\n- Skills were composed behind the scenes and traced into one run\n- Outputs are saved back into the shared artifact layer\n\n## Suggested next moves\n1. Review the generated artifact\n2. Approve any outbound action if required\n3. Publish the final output to the right workspace surface\n"""
-            return title, summary, content, ArtifactKind.REPORT
-
-        if request.module == ModuleKey.EXECUTION or "cadence" in lowered or "workflow" in lowered:
-            title = "Weekly Founder Review Cadence"
-            summary = "Operating cadence draft for the founder command loop."
-            content = f"""# Weekly Founder Review Cadence\n\n## Trigger\n{message}\n\n## Monday review structure\n- KPI pulse\n- Decisions waiting on the founder\n- Risks that need intervention\n- Delegations that can move to agents\n\n## Output\n- One executive summary\n- One execution queue\n- One investor-facing snapshot when relevant\n"""
-            return title, summary, content, ArtifactKind.PLAN
-
-        if request.module == ModuleKey.ARTIFACTS or "brief" in lowered or "report" in lowered:
-            title = "Founder Brief"
-            summary = "Clean artifact generated from founder request."
-            content = f"""# Founder Brief\n\n## Prompt\n{message}\n\n## What changed\n- Converted the request into a reusable artifact\n- Structured it for downstream review and sharing\n- Preserved a trace back to the originating run\n"""
-            return title, summary, content, ArtifactKind.BRIEF
-
-        title = "Unified Operating Plan"
-        summary = "Strategy plan created from the founder request."
-        content = f"""# Unified Operating Plan\n\n## Founder request\n{message}\n\n## Plan shape\n- Clarify the strategic goal\n- Assign the right agent owners\n- Generate artifacts and cadences off the same operating spine\n\n## Recommended next moves\n1. Lock the wedge\n2. Choose the next operating workflow\n3. Publish the artifact into the shared workspace\n"""
-        return title, summary, content, ArtifactKind.PLAN
-
-    def _pick_app_id(self, request: ChatRequest) -> str | None:
-        lowered = request.message.lower()
-        if any(keyword in lowered for keyword in ["deck", "pitch", "memo", "investor update"]):
+    def _pick_app_id(self, text: str, module: ModuleKey) -> str | None:
+        lowered = text.lower()
+        if any(keyword in lowered for keyword in ["investor update", "diligence", "investor room"]):
+            return "app-investor-update"
+        if any(keyword in lowered for keyword in ["deck", "pitch", "investor memo", "deck review"]):
             return "app-pitch-reviewer"
-        if any(keyword in lowered for keyword in ["customer", "interview", "persona"]):
-            return "app-customer-research"
-        if any(keyword in lowered for keyword in ["founder review", "weekly review", "cadence"]):
+        if any(keyword in lowered for keyword in ["competitor", "market map"]):
+            return "app-competitor-analyst"
+        if any(keyword in lowered for keyword in ["customer research", "interview", "persona"]):
+            return "app-research-synthesizer"
+        if any(keyword in lowered for keyword in ["weekly review", "founder review", "cadence", "blockers"]):
             return "app-founder-review"
+        if any(keyword in lowered for keyword in ["hiring", "scorecard"]):
+            return "app-hiring-scorecard"
+        if module == ModuleKey.APPS:
+            featured = next((app for app in self.store.apps if app.featured), None)
+            return featured.id if featured else None
         return None
 
-    def _context_items(self, request: ChatRequest, artifact_title: str) -> list[str]:
-        context = [
-            f"Workspace mission: {self.store.workspace.mission}",
-            f"Primary KPI: {self.store.workspace.primary_kpi}",
-        ]
-        context.extend(
-            f"Goal: {goal.title} ({goal.status})" for goal in self.store.goals[:2]
-        )
-        context.extend(
-            f"Knowledge: {source.title} [{source.source_type}]"
-            for source in self.store.knowledge_sources[:2]
-        )
-        context.append(f"Active artifact: {artifact_title}")
-        if request.selected_artifact_id:
-            selected = next(
-                (artifact for artifact in self.store.artifacts if artifact.id == request.selected_artifact_id),
-                None,
-            )
-            if selected is not None:
-                context.append(f"Founder referenced artifact: {selected.title}")
-        return context
+    def _infer_skill_ids(self, text: str, module: ModuleKey, app_id: str | None) -> list[str]:
+        lowered = text.lower()
+        skills: list[str] = list(self.store.get_app(app_id).skill_ids) if app_id else []
+        if any(keyword in lowered for keyword in ["deck", "pitch", "investor memo"]):
+            skills.append("skill-deck-review")
+        if any(keyword in lowered for keyword in ["market", "competitor", "positioning", "gtm"]):
+            skills.append("skill-market-synthesis")
+        if any(keyword in lowered for keyword in ["customer", "persona", "interview", "research"]):
+            skills.append("skill-persona-clustering")
+        if any(keyword in lowered for keyword in ["founder review", "weekly review", "blocker", "cadence", "decision"]):
+            skills.append("skill-founder-review")
+        if any(keyword in lowered for keyword in ["diligence", "investor room", "fundraise", "investor update"]):
+            skills.append("skill-diligence-pack")
+        if any(keyword in lowered for keyword in ["hire", "hiring", "scorecard", "interview kit"]):
+            skills.append("skill-hiring-scorecard")
 
-    def _memory_hits(self, request: ChatRequest, artifact) -> list[MemoryItem]:
-        hits: list[MemoryItem] = [
-            MemoryItem(
-                id=f"memory-active-artifact-{artifact.id}",
-                title=artifact.title,
-                summary=artifact.summary,
-                kind="artifact",
-                updated_at=artifact.updated_at,
-                source_id=artifact.id,
-                pinned=True,
-            )
-        ]
-        hits.extend(
-            MemoryItem(
-                id=f"memory-hit-{goal.id}",
-                title=goal.title,
-                summary=f"{goal.status} · KPI: {goal.kpi}",
-                kind="goal",
-                updated_at=goal.due_date,
-                source_id=goal.id,
-            )
-            for goal in self.store.goals[:2]
-        )
-        hits.extend(
-            MemoryItem(
-                id=f"memory-hit-{source.id}",
-                title=source.title,
-                summary=f"{source.source_type.title()} · {source.freshness}",
-                kind="knowledge",
-                updated_at=artifact.updated_at,
-                source_id=source.id,
-            )
-            for source in self.store.knowledge_sources[:2]
-        )
-        if request.module == ModuleKey.CAPITAL:
-            hits.extend(
-                MemoryItem(
-                    id=f"memory-hit-investor-{investor.id}",
-                    title=investor.name,
-                    summary=f"{investor.relationship_status} · {investor.next_step}",
-                    kind="relationship",
-                    updated_at=artifact.updated_at,
-                    source_id=investor.id,
+        if not skills:
+            default_by_module = {
+                ModuleKey.INBOX: ["skill-founder-review"],
+                ModuleKey.STRATEGY: ["skill-market-synthesis"],
+                ModuleKey.TEAM: ["skill-hiring-scorecard"],
+                ModuleKey.EXECUTION: ["skill-founder-review"],
+                ModuleKey.ARTIFACTS: ["skill-market-synthesis"],
+                ModuleKey.CAPITAL: ["skill-diligence-pack"],
+                ModuleKey.APPS: ["skill-market-synthesis"],
+            }
+            skills = default_by_module[module]
+
+        deduped: list[str] = []
+        for skill in skills:
+            if skill not in deduped:
+                deduped.append(skill)
+        return deduped
+
+    def _selected_artifact_content(self, artifact_id: str | None) -> str | None:
+        if not artifact_id:
+            return None
+        try:
+            return self.store.get_artifact(artifact_id).content
+        except KeyError:
+            return None
+
+    def _execute_skills(
+        self,
+        *,
+        skill_ids: Iterable[str],
+        founder_prompt: str,
+        memory_hits: list[MemoryItem],
+        selected_artifact_id: str | None,
+    ) -> list[SkillExecution]:
+        selected_artifact = self._selected_artifact_content(selected_artifact_id)
+        executions: list[SkillExecution] = []
+        for skill_id in skill_ids:
+            executions.append(
+                self.skill_engine.run(
+                    skill_id=skill_id,
+                    founder_prompt=founder_prompt,
+                    memory_hits=memory_hits,
+                    workspace_name=self.store.workspace.company_name,
+                    founder_name=self.store.workspace.founder_name,
+                    selected_artifact_content=selected_artifact,
                 )
-                for investor in self.store.fundraise_pipeline.investors[:2]
             )
-        return hits
+        return executions
 
-    def _next_actions(self, request: ChatRequest) -> list[str]:
-        if request.module == ModuleKey.CAPITAL:
-            return [
-                "Publish the latest artifact to the investor room",
-                "Queue diligence follow-up for top investors",
-                "Ask FundraiseAgent to tighten the round narrative",
+    def _compose_artifact(
+        self,
+        *,
+        task: TaskRun,
+        module: ModuleKey,
+        app_id: str | None,
+        executions: list[SkillExecution],
+    ) -> Artifact:
+        primary = executions[0]
+        if app_id:
+            app = self.store.get_app(app_id)
+            title = f"{app.title} Output"
+            summary = f"{app.title} ran {len(executions)} skill(s) and saved a reusable output."
+            kind = ArtifactKind.REPORT if module == ModuleKey.APPS else primary.artifact_kind
+        elif len(executions) == 1:
+            title = primary.artifact_title
+            summary = primary.artifact_summary
+            kind = primary.artifact_kind
+        else:
+            title = "Founder Workspace Output"
+            summary = "Combined output assembled from multiple workspace skills."
+            kind = ArtifactKind.REPORT
+
+        content = "\n\n".join(
+            [
+                f"# {title}",
+                *[
+                    f"## {execution.title}\n\n{execution.body}"
+                    for execution in executions
+                ],
             ]
-        if request.module == ModuleKey.APPS:
-            return [
-                "Launch the suggested app with the current prompt",
-                "Review the generated artifact and save edits",
-                "Route the output back into the command thread",
-            ]
-        return [
-            "Keep working in the same command thread",
-            "Promote the output into a durable artifact",
-            "Delegate follow-through to the right agent or app",
+        )
+        return self.store.upsert_artifact(
+            title=title,
+            module=module,
+            summary=summary,
+            content=content,
+            kind=kind,
+            linked_run_id=task.id,
+        )
+
+    def _reply_content(
+        self,
+        *,
+        prompt: str,
+        active_agent_name: str,
+        active_agent_role: str,
+        module: ModuleKey,
+        artifact: Artifact,
+        memory_hits: list[MemoryItem],
+        executions: list[SkillExecution],
+        app_id: str | None,
+    ) -> str:
+        executed_titles = ", ".join(execution.title for execution in executions)
+        context_lines = "\n".join(f"- {item.title}: {item.summary}" for item in memory_hits[:5])
+        if self.runtime.is_ready():
+            try:
+                system_prompt = (
+                    f"You are {active_agent_name} inside VXV Workspace.\n"
+                    f"Role: {active_agent_role}\n"
+                    f"Module: {module.value}\n"
+                    "Respond like a founder chief of staff. Be specific, grounded, and action-oriented.\n"
+                    "Use markdown with sections: What happened, Context used, Recommended next step."
+                )
+                user_prompt = (
+                    f"Founder request:\n{prompt}\n\n"
+                    f"Executed skill work:\n- {executed_titles}\n\n"
+                    f"Saved artifact: {artifact.title}\n"
+                    f"Artifact summary: {artifact.summary}\n\n"
+                    f"Memory used:\n{context_lines or '- None'}\n\n"
+                    f"App launched: {app_id or 'None'}"
+                )
+                return self.runtime.generate(
+                    agent_name=active_agent_name,
+                    sys_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                )
+            except Exception:
+                pass
+
+        action_line = (
+            f"I used the {self.store.get_app(app_id).title} workflow to execute {executed_titles}."
+            if app_id
+            else f"I executed {executed_titles} and saved the result as `{artifact.title}`."
+        )
+        return (
+            f"## {active_agent_name}\n\n"
+            "### What happened\n"
+            f"- {action_line}\n"
+            f"- The thread now has a reusable artifact: `{artifact.title}`\n\n"
+            "### Context used\n"
+            f"{context_lines or '- No prior memory was needed for this turn.'}\n\n"
+            "### Recommended next step\n"
+            "- Review the embedded nodes below.\n"
+            "- Open the artifact or app workspace if you want to go deeper.\n"
+            "- Keep working in this same thread so the memory stays continuous.\n"
+        )
+
+    def _next_actions(self, app_id: str | None, executions: list[SkillExecution]) -> list[str]:
+        actions = [
+            "Keep refining this in the same thread.",
+            "Open the latest artifact and tighten it before sharing.",
+            "Branch from this thread if you want to explore an alternate direction.",
         ]
+        if app_id:
+            actions.insert(0, "Open the app workspace for deeper review.")
+        if any(execution.module == ModuleKey.CAPITAL for execution in executions):
+            actions.insert(0, "Publish the strongest output to the investor room when it is ready.")
+        return actions[:4]
 
-    def _build_nodes(self, request: ChatRequest, artifact, task, launched_app_id: str | None) -> list[ThreadNode]:
-        nodes = [
-            ThreadNode(
-                id=f"node-artifact-{artifact.id}",
-                kind="artifact",
-                title=artifact.title,
-                summary=artifact.summary,
-                status="ready",
-                expanded_by_default=True,
-                body=artifact.content[:1600],
-                artifact_id=artifact.id,
-                cta_label="Open artifact",
-            ),
+    def _build_nodes(
+        self,
+        *,
+        task: TaskRun,
+        artifact: Artifact,
+        executions: list[SkillExecution],
+        app_id: str | None,
+    ) -> list[ThreadNode]:
+        nodes: list[ThreadNode] = [
             ThreadNode(
                 id=f"node-run-{task.id}",
                 kind="run",
@@ -203,32 +264,15 @@ class FounderOrchestrator:
                 summary=task.progress_label,
                 status=task.status.value,
                 bullet_points=[
-                    f"Agent: {task.owner_agent_id}",
+                    f"Owner: {task.owner_agent_id}",
                     f"Trace: {task.trace_summary}",
                     f"Outputs: {', '.join(task.outputs)}",
                 ],
                 task_run_id=task.id,
-            ),
-        ]
-        if task.requires_approval:
-            nodes.append(
-                ThreadNode(
-                    id=f"node-approval-{task.id}",
-                    kind="approval",
-                    title="Founder approval required",
-                    summary="This step needs your sign-off before external or irreversible work continues.",
-                    status="waiting",
-                    bullet_points=[
-                        "Approve to continue",
-                        "Request revision to tighten the output",
-                        "Reject to stop the action",
-                    ],
-                    task_run_id=task.id,
-                    cta_label="Review approval",
-                )
             )
-        if launched_app_id:
-            app = self.store.get_app(launched_app_id)
+        ]
+        if app_id:
+            app = self.store.get_app(app_id)
             nodes.append(
                 ThreadNode(
                     id=f"node-app-{app.id}",
@@ -244,78 +288,107 @@ class FounderOrchestrator:
                     cta_label="Open app workspace",
                 )
             )
+        for execution in executions:
+            nodes.append(
+                ThreadNode(
+                    id=f"node-skill-{task.id}-{execution.skill_id}",
+                    kind="skill",
+                    title=execution.title,
+                    summary=execution.summary,
+                    status="completed",
+                    body=execution.body[:1400],
+                    bullet_points=execution.bullet_points,
+                )
+            )
+        nodes.append(
+            ThreadNode(
+                id=f"node-artifact-{artifact.id}",
+                kind="artifact",
+                title=artifact.title,
+                summary=artifact.summary,
+                status="ready",
+                expanded_by_default=True,
+                body=artifact.content[:1800],
+                bullet_points=[
+                    f"Module: {artifact.module.value}",
+                    f"Updated: {artifact.updated_at}",
+                ],
+                artifact_id=artifact.id,
+                cta_label="Open artifact",
+            )
+        )
+        if task.requires_approval:
+            nodes.append(
+                ThreadNode(
+                    id=f"node-approval-{task.id}",
+                    kind="approval",
+                    title="Founder approval required",
+                    summary="This output needs approval before external-facing work continues.",
+                    status="waiting",
+                    bullet_points=[
+                        "Approve to continue",
+                        "Request revision to tighten the output",
+                        "Reject to stop the action",
+                    ],
+                    task_run_id=task.id,
+                    cta_label="Review approval",
+                )
+            )
         return nodes
 
-    def _system_prompt(self, request: ChatRequest, agent_name: str, role: str) -> str:
-        goals = "\n".join(f"- {goal.title}: {goal.kpi}" for goal in self.store.goals[:3])
-        return (
-            f"You are {agent_name} inside VXV Workspace.\n"
-            f"Role: {role}\n"
-            f"Founder: {self.store.workspace.founder_name}\n"
-            f"Company: {self.store.workspace.company_name}\n"
-            f"Active module: {request.module.value}\n"
-            "Respond in concise markdown with these sections:\n"
-            "## What I did\n## Why it matters\n## Suggested next step\n"
-            "Ground the answer in the founder operating system and avoid generic AI assistant framing.\n"
-            f"Current priorities:\n{goals}"
-        )
-
-    def _generate_reply_content(self, request: ChatRequest, agent_name: str, role: str, artifact_title: str) -> str:
-        if self.runtime.is_ready():
-            try:
-                return self.runtime.generate(
-                    agent_name=agent_name,
-                    sys_prompt=self._system_prompt(request, agent_name, role),
-                    user_prompt=request.message,
-                )
-            except Exception:
-                pass
-
-        return (
-            f"## {agent_name}\n\n"
-            f"I translated your request into a workspace action that fits the `{request.module.value}` module.\n\n"
-            "### What I did\n"
-            "- Routed the task to the right agent role\n"
-            f"- Created or refreshed the artifact `{artifact_title}`\n"
-            "- Opened a tracked run so the work stays visible in the operating layer\n\n"
-            "### Suggested next step\n"
-            "Review the artifact in the inspector, then either approve the run or ask me to tighten the output further.\n"
-        )
-
-    def _generate_structured_document(
+    def _run_thread_flow(
         self,
         *,
-        agent_name: str,
-        role: str,
         module: ModuleKey,
-        title: str,
         prompt: str,
-        context: str,
-        fallback: str,
-    ) -> str:
-        if self.runtime.is_ready():
-            try:
-                system_prompt = (
-                    f"You are {agent_name} inside VXV Workspace.\n"
-                    f"Role: {role}\n"
-                    f"Module: {module.value}\n"
-                    "Generate a founder-grade markdown document with clear headings, concise bullets, "
-                    "and practical next steps. Avoid generic AI caveats.\n"
-                    f"Document title: {title}\n"
-                    f"Context:\n{context}"
-                )
-                return self.runtime.generate(
-                    agent_name=agent_name,
-                    sys_prompt=system_prompt,
-                    user_prompt=prompt,
-                )
-            except Exception:
-                pass
+        selected_artifact_id: str | None = None,
+        explicit_app_id: str | None = None,
+    ) -> tuple:
+        active_agent = self._select_agent(module, prompt)
+        app_id = explicit_app_id or self._pick_app_id(prompt, module)
+        memory_hits = self.store.search_memory(prompt, selected_artifact_id=selected_artifact_id)
+        skill_ids = self._infer_skill_ids(prompt, module, app_id)
+        executions = self._execute_skills(
+            skill_ids=skill_ids,
+            founder_prompt=prompt,
+            memory_hits=memory_hits,
+            selected_artifact_id=selected_artifact_id,
+        )
 
-        return fallback
+        task_module = ModuleKey.APPS if explicit_app_id else module
+        task = self.store.add_task_run(
+            title=(self.store.get_app(app_id).title if app_id and explicit_app_id else f"{active_agent.name.replace('Agent', '')} thread run"),
+            module=task_module,
+            owner_agent_id=active_agent.id,
+            progress_label=f"Executed {len(executions)} skill(s) from the thread",
+            trace_summary=(
+                f"{active_agent.name} retrieved {len(memory_hits)} memory item(s), "
+                f"ran {', '.join(execution.title for execution in executions)}, and saved a durable output."
+            ),
+            outputs=[execution.artifact_title for execution in executions],
+            requires_approval=module in {ModuleKey.CAPITAL, ModuleKey.EXECUTION},
+            status=TaskStatus.WAITING if module in {ModuleKey.CAPITAL, ModuleKey.EXECUTION} else TaskStatus.COMPLETED,
+        )
+
+        artifact = self._compose_artifact(
+            task=task,
+            module=task_module,
+            app_id=app_id,
+            executions=executions,
+        )
+        reply_content = self._reply_content(
+            prompt=prompt,
+            active_agent_name=active_agent.name,
+            active_agent_role=active_agent.role,
+            module=module,
+            artifact=artifact,
+            memory_hits=memory_hits,
+            executions=executions,
+            app_id=app_id,
+        )
+        return active_agent, memory_hits, executions, task, artifact, reply_content, app_id
 
     def respond(self, request: ChatRequest) -> ChatResponse:
-        active_agent = self._select_agent(request)
         self.store.append_message(
             role="user",
             author="Founder",
@@ -323,143 +396,93 @@ class FounderOrchestrator:
             content=request.message,
         )
 
-        task = self.store.add_task_run(
-            title=f"{active_agent.name.replace('Agent', '')} response",
+        (
+            active_agent,
+            memory_hits,
+            executions,
+            task,
+            artifact,
+            reply_content,
+            app_id,
+        ) = self._run_thread_flow(
             module=request.module,
-            owner_agent_id=active_agent.id,
-            progress_label="Drafting next best action",
-            trace_summary=f"{active_agent.name} converted the founder request into a reusable workspace output.",
-            outputs=["Agent response", "Artifact update"],
-            requires_approval=request.module in {ModuleKey.EXECUTION, ModuleKey.CAPITAL},
-            status=TaskStatus.WAITING if request.module in {ModuleKey.EXECUTION, ModuleKey.CAPITAL} else TaskStatus.RUNNING,
+            prompt=request.message,
+            selected_artifact_id=request.selected_artifact_id,
         )
 
-        artifact_title, artifact_summary, artifact_content, artifact_kind = self._artifact_template(request)
-        artifact = self.store.upsert_artifact(
-            title=artifact_title,
-            module=request.module,
-            summary=artifact_summary,
-            content=artifact_content,
-            kind=artifact_kind,
-            linked_run_id=task.id,
-        )
-
-        reply_content = self._generate_reply_content(
-            request=request,
-            agent_name=active_agent.name,
-            role=active_agent.role,
-            artifact_title=artifact.title,
-        )
-
+        next_actions = self._next_actions(app_id, executions)
+        nodes = self._build_nodes(task=task, artifact=artifact, executions=executions, app_id=app_id)
         reply = self.store.append_message(
             role="assistant",
             author=active_agent.name,
             module=request.module,
             content=reply_content,
+            nodes=nodes,
+            memory_hits=memory_hits,
+            next_actions=next_actions,
         )
 
-        launched_app_id = self._pick_app_id(request)
         return ChatResponse(
             reply=reply,
             active_agent=active_agent,
             task_run=task,
             artifact=artifact,
             suggestions=[
-                "Turn this into a tracked founder workflow",
-                "Use an app or skill if a deeper workflow is needed",
-                "Keep building on this in the same thread",
+                "Keep the thread going instead of opening a new chat.",
+                "Open the artifact if you need a deep edit.",
+                "Use an app only when the thread needs a richer workspace.",
             ],
             routed_module=active_agent.module,
-            context_items=self._context_items(request, artifact.title),
-            next_actions=self._next_actions(request),
-            nodes=self._build_nodes(request, artifact, task, launched_app_id),
-            memory_hits=self._memory_hits(request, artifact),
-            launched_app_id=launched_app_id,
+            context_items=[f"{item.title}: {item.summary}" for item in memory_hits],
+            next_actions=next_actions,
+            nodes=nodes,
+            memory_hits=memory_hits,
+            launched_app_id=app_id,
             updated_metrics=self.store.metrics(),
         )
 
     def decide_approval(self, task_id: str, decision: ApprovalDecision) -> ActionResponse:
         task = self.store.get_task_run(task_id)
-
         if decision == ApprovalDecision.APPROVE:
             task.status = TaskStatus.COMPLETED
             task.progress_label = "Approved by founder"
-            task.trace_summary = f"{task.trace_summary} The founder approved the action and the run was cleared to proceed."
-            message = "Approval recorded. The run has been cleared to continue."
+            task.trace_summary = f"{task.trace_summary} The founder approved the output."
+            message = "Approval recorded. The run can proceed."
         elif decision == ApprovalDecision.REQUEST_REVISION:
             task.status = TaskStatus.RUNNING
             task.progress_label = "Revision requested"
-            task.trace_summary = f"{task.trace_summary} Founder requested changes before the action is finalized."
-            message = "Revision requested. The responsible agent should tighten the output."
+            task.trace_summary = f"{task.trace_summary} Founder requested revision."
+            message = "Revision requested."
         else:
             task.status = TaskStatus.REJECTED
             task.progress_label = "Rejected by founder"
             task.trace_summary = f"{task.trace_summary} Founder rejected the action."
-            message = "The action was rejected and will not proceed."
-
+            message = "The action was rejected."
         task.requires_approval = False
         self.store.persist()
         return ActionResponse(task_run=task, message=message)
 
     def launch_app(self, app_id: str, request: AppLaunchRequest) -> ActionResponse:
-        app = self.store.get_app(app_id)
-        active_agent = self._select_agent(
-            ChatRequest(module=ModuleKey.APPS, message=f"{app.title}: {request.prompt}")
-        )
-
-        task = self.store.add_task_run(
-            title=f"{app.title} run",
+        (
+            _active_agent,
+            _memory_hits,
+            _executions,
+            task,
+            artifact,
+            _reply_content,
+            resolved_app_id,
+        ) = self._run_thread_flow(
             module=ModuleKey.APPS,
-            owner_agent_id=active_agent.id,
-            progress_label="Generating outputs",
-            trace_summary=f"{app.title} is running inside the workspace and composing {len(app.skill_ids)} skills into publishable outputs.",
-            outputs=app.artifact_outputs,
-            requires_approval=app.module == ModuleKey.CAPITAL,
-            status=TaskStatus.WAITING if app.module == ModuleKey.CAPITAL else TaskStatus.RUNNING,
-        )
-
-        artifact_content = self._generate_structured_document(
-            agent_name=active_agent.name,
-            role=active_agent.role,
-            module=ModuleKey.APPS,
-            title=f"{app.title} Output",
             prompt=request.prompt,
-            context=(
-                f"App title: {app.title}\n"
-                f"App summary: {app.summary}\n"
-                f"Artifact outputs: {', '.join(app.artifact_outputs)}\n"
-                f"Skill ids: {', '.join(app.skill_ids)}"
-            ),
-            fallback=(
-                f"# {app.title} Output\n\n"
-                f"## Founder prompt\n{request.prompt}\n\n"
-                "## App interpretation\n"
-                f"- Routed through the {app.title} workflow surface\n"
-                f"- Used {len(app.skill_ids)} skills behind the scenes\n"
-                f"- Linked the result back into the shared artifact layer\n\n"
-                "## Next actions\n"
-                "1. Review the generated artifact\n"
-                "2. Decide whether to save, share, or publish it\n"
-                "3. Use the run trace for accountability and follow-through\n"
-            ),
+            explicit_app_id=app_id,
         )
-
-        artifact = self.store.upsert_artifact(
-            title=f"{app.title} Output",
-            module=ModuleKey.APPS,
-            summary=f"Output generated by the {app.title} app.",
-            content=artifact_content,
-            kind=ArtifactKind.REPORT,
-            linked_run_id=task.id,
-        )
-
-        app.last_run_at = task.created_at
-        self.store.persist()
-
+        if resolved_app_id:
+            self.store.get_app(resolved_app_id).last_run_at = task.created_at
+            self.store.persist()
         return ActionResponse(
             task_run=task,
             artifact=artifact,
-            message=f"{app.title} launched successfully.",
+            message=f"{self.store.get_app(app_id).title} launched successfully.",
         )
 
     def publish_investor_room(self, request: PublishInvestorRoomRequest) -> InvestorRoomActionResponse:
@@ -471,59 +494,25 @@ class FounderOrchestrator:
 
     def launch_workflow(self, workflow_id: str, request: WorkflowLaunchRequest) -> ActionResponse:
         workflow = self.store.get_workflow(workflow_id)
-        active_agent = self._select_agent(
-            ChatRequest(module=workflow.module, message=f"{workflow.title}: {request.note}")
-        )
-
-        task = self.store.add_task_run(
-            title=workflow.title,
+        (
+            _active_agent,
+            _memory_hits,
+            _executions,
+            task,
+            artifact,
+            _reply_content,
+            _app_id,
+        ) = self._run_thread_flow(
             module=workflow.module,
-            owner_agent_id=active_agent.id,
-            progress_label="Workflow is drafting outputs",
-            trace_summary=(
-                f"{workflow.title} is running through {active_agent.name} to turn founder intent "
-                "into an accountable workflow output."
-            ),
-            outputs=workflow.outputs,
-            requires_approval=workflow.module in {ModuleKey.EXECUTION, ModuleKey.CAPITAL},
-            status=TaskStatus.WAITING if workflow.module in {ModuleKey.EXECUTION, ModuleKey.CAPITAL} else TaskStatus.RUNNING,
+            prompt=f"{workflow.title}: {request.note}",
         )
-
-        artifact_kind = ArtifactKind.MEMO if workflow.module == ModuleKey.CAPITAL else ArtifactKind.PLAN
-        artifact_content = self._generate_structured_document(
-            agent_name=active_agent.name,
-            role=active_agent.role,
-            module=workflow.module,
-            title=f"{workflow.title} Output",
-            prompt=request.note,
-            context=(
-                f"Workflow title: {workflow.title}\n"
-                f"Workflow description: {workflow.description}\n"
-                f"Workflow outputs: {', '.join(workflow.outputs)}"
-            ),
-            fallback=(
-                f"# {workflow.title}\n\n"
-                f"## Founder note\n{request.note}\n\n"
-                "## Workflow scope\n"
-                f"- Module: {workflow.module.value}\n"
-                f"- Outputs: {', '.join(workflow.outputs)}\n"
-                f"- Responsible agent: {active_agent.name}\n\n"
-                "## Suggested next moves\n"
-                "1. Review the workflow output\n"
-                "2. Approve external-facing actions if required\n"
-                "3. Route the artifact into the right module or investor room\n"
-            ),
+        task.title = workflow.title
+        task.outputs = workflow.outputs
+        task.trace_summary = (
+            f"{task.trace_summary} The workflow `{workflow.title}` packaged outputs for "
+            f"{', '.join(workflow.outputs)}."
         )
-
-        artifact = self.store.upsert_artifact(
-            title=f"{workflow.title} Output",
-            module=workflow.module,
-            summary=f"Workflow output generated for {workflow.title}.",
-            content=artifact_content,
-            kind=artifact_kind,
-            linked_run_id=task.id,
-        )
-
+        self.store.persist()
         return ActionResponse(
             task_run=task,
             artifact=artifact,

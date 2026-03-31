@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
@@ -555,6 +556,137 @@ class DemoStore:
         )
         return items
 
+    def search_memory(
+        self,
+        query: str,
+        *,
+        limit: int = 6,
+        selected_artifact_id: str | None = None,
+    ) -> list[MemoryItem]:
+        tokens = {token for token in re.findall(r"[a-z0-9]+", query.lower()) if len(token) > 2}
+        documents: list[tuple[MemoryItem, str]] = []
+
+        documents.append(
+            (
+                MemoryItem(
+                    id="memory-workspace-core",
+                    title=self.workspace.company_name,
+                    summary=self.workspace.summary,
+                    kind="workspace",
+                    updated_at=now_iso(),
+                    source_id=self.workspace.id,
+                    pinned=True,
+                ),
+                " ".join(
+                    [
+                        self.workspace.company_name,
+                        self.workspace.stage,
+                        self.workspace.mission,
+                        self.workspace.primary_kpi,
+                        self.workspace.summary,
+                    ]
+                ),
+            )
+        )
+        documents.extend(
+            (
+                MemoryItem(
+                    id=f"memory-goal-{goal.id}",
+                    title=goal.title,
+                    summary=f"{goal.status} · KPI: {goal.kpi}",
+                    kind="goal",
+                    updated_at=goal.due_date,
+                    source_id=goal.id,
+                ),
+                " ".join([goal.title, goal.kpi, goal.status]),
+            )
+            for goal in self.goals
+        )
+        documents.extend(
+            (
+                MemoryItem(
+                    id=f"memory-knowledge-{source.id}",
+                    title=source.title,
+                    summary=f"{source.source_type} · {source.freshness}",
+                    kind="knowledge",
+                    updated_at=now_iso(),
+                    source_id=source.id,
+                ),
+                " ".join([source.title, source.source_type, source.status, source.freshness]),
+            )
+            for source in self.knowledge_sources
+        )
+        documents.extend(
+            (
+                MemoryItem(
+                    id=f"memory-artifact-{artifact.id}",
+                    title=artifact.title,
+                    summary=artifact.summary,
+                    kind="artifact",
+                    updated_at=artifact.updated_at,
+                    source_id=artifact.id,
+                    pinned=artifact.id == selected_artifact_id,
+                ),
+                " ".join([artifact.title, artifact.summary, artifact.content[:2500]]),
+            )
+            for artifact in self.artifacts
+        )
+        documents.extend(
+            (
+                MemoryItem(
+                    id=f"memory-contact-{contact.id}",
+                    title=contact.name,
+                    summary=f"{contact.category} · {contact.relationship_stage}",
+                    kind="relationship",
+                    updated_at=contact.last_touch,
+                    source_id=contact.id,
+                ),
+                " ".join([contact.name, contact.category, contact.company, contact.relationship_stage]),
+            )
+            for contact in self.contacts
+        )
+        documents.extend(
+            (
+                MemoryItem(
+                    id=f"memory-investor-{investor.id}",
+                    title=investor.name,
+                    summary=f"{investor.relationship_status} · {investor.next_step}",
+                    kind="capital",
+                    updated_at=now_iso(),
+                    source_id=investor.id,
+                ),
+                " ".join([investor.name, investor.thesis, investor.stage_fit, investor.relationship_status, investor.next_step]),
+            )
+            for investor in self.fundraise_pipeline.investors
+        )
+        documents.extend(
+            (
+                MemoryItem(
+                    id=f"memory-message-{message.id}",
+                    title=f"{message.author} thread note",
+                    summary=message.content[:140],
+                    kind="thread",
+                    updated_at=message.created_at,
+                    source_id=message.id,
+                ),
+                message.content[:1500],
+            )
+            for message in self.messages[-8:]
+        )
+
+        def score(item: tuple[MemoryItem, str]) -> tuple[int, int]:
+            memory, text = item
+            haystack = text.lower()
+            overlap = sum(1 for token in tokens if token in haystack)
+            pin_bonus = 3 if memory.pinned else 0
+            return (overlap + pin_bonus, len(memory.summary))
+
+        ranked = sorted(documents, key=score, reverse=True)
+        if not tokens:
+            return [item[0] for item in ranked[:limit]]
+        filtered = [item[0] for item in ranked if score(item)[0] > 0]
+        return filtered[:limit] if filtered else [item[0] for item in ranked[:limit]]
+
     def bootstrap(self) -> BootstrapResponse:
         return BootstrapResponse(
             workspace=self.workspace,
@@ -575,7 +707,17 @@ class DemoStore:
             metrics=self.metrics(),
         )
 
-    def append_message(self, role: str, author: str, module: ModuleKey, content: str) -> ChatMessage:
+    def append_message(
+        self,
+        role: str,
+        author: str,
+        module: ModuleKey,
+        content: str,
+        *,
+        nodes=None,
+        memory_hits=None,
+        next_actions=None,
+    ) -> ChatMessage:
         message = ChatMessage(
             id=_message_id(),
             role=role,
@@ -583,6 +725,9 @@ class DemoStore:
             module=module,
             content=content,
             created_at=now_iso(),
+            nodes=list(nodes or []),
+            memory_hits=list(memory_hits or []),
+            next_actions=list(next_actions or []),
         )
         self.messages.append(message)
         self.persist()
