@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # VXV Workspace
 
 Unified founder operating system scaffold built on the AgentScope ecosystem.
@@ -137,3 +138,6 @@ still in-memory and resets on restart or redeploy.
 
 - `agentscope-runtime` is treated as the production runtime target even though it is not currently installed from PyPI here.
 - The API reports whether optional `agentscope` and `reme` imports are available so the UI can make that status visible.
+=======
+# vxv-workspace
+>>>>>>> 498ef06959f9e4a3dded9bc782c064edc06a5bfe
