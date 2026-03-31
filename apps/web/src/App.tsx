@@ -1442,10 +1442,15 @@ function App() {
                                 onClick={() => void handleSaveArtifact()}
                                 type="button"
                               >
-                                Save to artifacts
+                                {isSavingArtifact ? "Saving..." : "Save to artifacts"}
                               </button>
-                              <button className="ghost-action" type="button">
-                                Publish to investor room
+                              <button
+                                className="ghost-action"
+                                disabled={isPublishingRoom}
+                                onClick={() => void handlePublishInvestorRoom()}
+                                type="button"
+                              >
+                                {isPublishingRoom ? "Publishing..." : "Publish to investor room"}
                               </button>
                             </div>
                           </div>

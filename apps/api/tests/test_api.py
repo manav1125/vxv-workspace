@@ -60,3 +60,18 @@ def test_launch_app_creates_run_and_artifact() -> None:
     assert payload["task_run"]["module"] == "apps"
     assert payload["artifact"]["module"] == "apps"
     assert payload["artifact"]["title"] == "Pitch Deck Reviewer Output"
+
+
+def test_publish_investor_room_curates_selected_artifact() -> None:
+    bootstrap = client.get("/api/bootstrap").json()
+    artifact_id = bootstrap["artifacts"][0]["id"]
+
+    response = client.post(
+        "/api/investor-room/publish",
+        json={"artifact_id": artifact_id},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert artifact_id in payload["investor_room"]["curated_artifact_ids"]
+    assert payload["message"] == "Investor room updated and ready to share."
