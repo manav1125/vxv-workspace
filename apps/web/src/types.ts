@@ -181,6 +181,28 @@ export interface AuthSession {
   email: string;
   workspace_id: string;
   display_name: string;
+  role: string;
+}
+
+export interface WorkspaceUser {
+  email: string;
+  workspace_id: string;
+  display_name: string;
+  role: string;
+  status: string;
+  created_at?: string | null;
+  last_login_at?: string | null;
+}
+
+export interface UploadRecord {
+  id: string;
+  workspace_id: string;
+  filename: string;
+  stored_path: string;
+  storage_backend: string;
+  storage_url?: string | null;
+  content_type?: string | null;
+  created_at: string;
 }
 
 export interface BootstrapResponse {
@@ -228,6 +250,7 @@ export interface InvestorRoomActionResponse {
 }
 
 export interface UploadResponse {
+  upload: UploadRecord;
   knowledge_source: KnowledgeSource;
   artifact: Artifact;
   message: string;

@@ -30,7 +30,7 @@ from .models import (
     WorkspaceApp,
     now_iso,
 )
-from .persistence import SqlitePersistence
+from .persistence import PersistenceBackend
 from .runtime import detect_runtime_capabilities
 
 
@@ -52,7 +52,7 @@ def _entity_id(prefix: str) -> str:
 
 @dataclass
 class DemoStore:
-    persistence: SqlitePersistence = field(default_factory=SqlitePersistence)
+    persistence: PersistenceBackend = field(default_factory=PersistenceBackend)
     workspace: Workspace = field(default_factory=lambda: Workspace(
         id="workspace-vxv",
         name="VXV Workspace",

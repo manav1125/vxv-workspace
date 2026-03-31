@@ -3,6 +3,7 @@ from pathlib import Path
 import sys
 import tempfile
 
+import jwt
 from fastapi.testclient import TestClient
 
 TEST_TMP = Path(tempfile.gettempdir()) / "vxv-workspace-tests"
@@ -16,6 +17,7 @@ os.environ["VXV_UPLOAD_DIR"] = str(TEST_TMP / "uploads")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.main import app
+from app.auth import OIDCVerifier
 
 
 client = TestClient(app)
@@ -199,5 +201,69 @@ def test_upload_endpoint_ingests_document() -> None:
     )
     assert response.status_code == 200
     payload = response.json()
+    assert payload["upload"]["storage_backend"] == "local"
     assert payload["knowledge_source"]["title"] == "Founder Notes"
     assert payload["artifact"]["module"] == "apps"
+
+    uploads_response = client.get("/api/uploads", headers=headers)
+    assert uploads_response.status_code == 200
+    assert any(item["filename"] == "founder-notes.txt" for item in uploads_response.json())
+
+
+def test_owner_can_create_workspace_user() -> None:
+    headers = auth_headers()
+    response = client.post(
+        "/api/users",
+        headers=headers,
+        json={
+            "email": "operator@vxv.network",
+            "password": "temporary-password",
+            "display_name": "Operator",
+            "role": "member",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["email"] == "operator@vxv.network"
+
+    users_response = client.get("/api/users", headers=headers)
+    assert users_response.status_code == 200
+    assert any(user["email"] == "operator@vxv.network" for user in users_response.json())
+
+    update_response = client.patch(
+        "/api/users/operator@vxv.network",
+        headers=headers,
+        json={
+            "role": "investor",
+            "status": "suspended",
+        },
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["role"] == "investor"
+    assert update_response.json()["status"] == "suspended"
+
+
+def test_oidc_verifier_accepts_shared_secret_tokens(monkeypatch) -> None:
+    shared_secret = "top-secret-value-that-is-long-enough-for-hs256"
+    monkeypatch.setenv("VXV_OIDC_SHARED_SECRET", shared_secret)
+    monkeypatch.setenv("VXV_OIDC_ISSUER", "https://auth.example.com/")
+    monkeypatch.setenv("VXV_OIDC_AUDIENCE", "vxv-workspace")
+    token = jwt.encode(
+        {
+            "iss": "https://auth.example.com/",
+            "aud": "vxv-workspace",
+            "email": "sso-user@vxv.network",
+            "name": "SSO User",
+            "role": "member",
+        },
+        shared_secret,
+        algorithm="HS256",
+    )
+
+    verifier = OIDCVerifier()
+    identity = verifier.validate(token)
+
+    assert identity is not None
+    assert identity.email == "sso-user@vxv.network"
+    assert identity.display_name == "SSO User"
+    assert identity.role == "member"

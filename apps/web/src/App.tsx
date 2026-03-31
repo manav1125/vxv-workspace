@@ -1,4 +1,3 @@
-import { Markdown } from "@agentscope-ai/chat";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -7,7 +6,10 @@ import {
   createFundraiseInvestor,
   createGoal,
   createKnowledgeSource,
+  createUser,
   decideApproval,
+  fetchUploads,
+  fetchUsers,
   fetchSession,
   fetchBootstrap,
   launchApp,
@@ -17,12 +19,14 @@ import {
   saveArtifact,
   sendFounderMessage,
   setAuthToken,
+  updateUser,
   updateAgent,
   updateFundraiseInvestor,
   updateGoal,
   updateWorkspace,
   uploadDocument,
 } from "./lib/api";
+import { MarkdownRenderer } from "./components/MarkdownRenderer";
 import type {
   AppCategory,
   Artifact,
@@ -31,7 +35,8 @@ import type {
   ChatMessage,
   ModuleKey,
   SkillDefinition,
-  WorkspaceApp,
+  UploadRecord,
+  WorkspaceUser,
 } from "./types";
 
 const moduleOrder: ModuleKey[] = [
@@ -180,6 +185,8 @@ function categoryLabel(category: AppCategory): string {
 
 function App() {
   const [data, setData] = useState<BootstrapResponse | null>(null);
+  const [users, setUsers] = useState<WorkspaceUser[]>([]);
+  const [uploads, setUploads] = useState<UploadRecord[]>([]);
   const [activeModule, setActiveModule] = useState<ModuleKey>("inbox");
   const [selectedArtifactId, setSelectedArtifactId] = useState("");
   const [artifactDraft, setArtifactDraft] = useState("");
@@ -253,6 +260,15 @@ function App() {
   const [uploadTitle, setUploadTitle] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [userForm, setUserForm] = useState({
+    email: "",
+    password: "",
+    display_name: "",
+    role: "member",
+  });
+  const [userDrafts, setUserDrafts] = useState<
+    Record<string, { display_name: string; role: string; status: string }>
+  >({});
 
   useEffect(() => {
     const load = async () => {
@@ -260,8 +276,14 @@ function App() {
         setIsLoading(true);
         const session = await fetchSession();
         setAuthSession(session);
-        const bootstrap = await fetchBootstrap();
+        const [bootstrap, workspaceUsers, workspaceUploads] = await Promise.all([
+          fetchBootstrap(),
+          fetchUsers(),
+          fetchUploads(),
+        ]);
         setData(bootstrap);
+        setUsers(workspaceUsers);
+        setUploads(workspaceUploads);
         const initialArtifact =
           bootstrap.artifacts.find((artifact) => artifact.module === "strategy") ??
           bootstrap.artifacts[0];
@@ -379,6 +401,21 @@ function App() {
   }, [selectedAgent]);
 
   useEffect(() => {
+    setUserDrafts(
+      Object.fromEntries(
+        users.map((user) => [
+          user.email,
+          {
+            display_name: user.display_name,
+            role: user.role,
+            status: user.status,
+          },
+        ]),
+      ),
+    );
+  }, [users]);
+
+  useEffect(() => {
     if (selectedArtifact) {
       setArtifactDraft(selectedArtifact.content);
     }
@@ -492,7 +529,11 @@ function App() {
     preferredAppId?: string;
   }) => {
     const bootstrap = await fetchBootstrap();
+    const workspaceUsers = authSession ? await fetchUsers() : users;
+    const workspaceUploads = authSession ? await fetchUploads() : uploads;
     setData(bootstrap);
+    setUsers(workspaceUsers);
+    setUploads(workspaceUploads);
 
     const nextArtifactId =
       options?.preferredArtifactId && bootstrap.artifacts.some((artifact) => artifact.id === options.preferredArtifactId)
@@ -928,6 +969,43 @@ function App() {
     }
   };
 
+  const handleCreateUser = async () => {
+    try {
+      setIsSubmittingPanel(true);
+      await createUser(userForm);
+      await reloadWorkspace({ preferredModule: "team" });
+      setUserForm({
+        email: "",
+        password: "",
+        display_name: "",
+        role: "member",
+      });
+      setActionNotice("Workspace user added.");
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Unable to add workspace user");
+    } finally {
+      setIsSubmittingPanel(false);
+    }
+  };
+
+  const handleUpdateUser = async (email: string) => {
+    const draft = userDrafts[email];
+    if (!draft) {
+      return;
+    }
+
+    try {
+      setIsSubmittingPanel(true);
+      await updateUser(email, draft);
+      await reloadWorkspace({ preferredModule: "team" });
+      setActionNotice("Workspace access updated.");
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Unable to update workspace user");
+    } finally {
+      setIsSubmittingPanel(false);
+    }
+  };
+
   const handleModuleSelect = (module: ModuleKey) => {
     setActiveModule(module);
     if (module !== "capital") {
@@ -1145,7 +1223,7 @@ function App() {
                               <span>{formatTimestamp(message.created_at)}</span>
                             </div>
                             {message.role === "assistant" ? (
-                              <Markdown content={message.content} />
+                              <MarkdownRenderer content={message.content} />
                             ) : (
                               <p>{message.content}</p>
                             )}
@@ -1680,6 +1758,200 @@ function App() {
                       </button>
                     </div>
                   </section>
+
+                  <section className="two-column">
+                    <article className="surface-card">
+                      <div className="panel-header">
+                        <div>
+                          <p className="section-kicker">Workspace users</p>
+                          <h3>People with access</h3>
+                        </div>
+                      </div>
+                      <div className="list-stack">
+                        {users.map((user) => (
+                          <div key={user.email} className="list-row">
+                            <div>
+                              <strong>{userDrafts[user.email]?.display_name ?? user.display_name}</strong>
+                              <p>{user.email}</p>
+                            </div>
+                            <div className="list-side">
+                              <span className="status-pill">{userDrafts[user.email]?.role ?? user.role}</span>
+                              <small>
+                                {user.last_login_at
+                                  ? `Last login ${formatTimestamp(user.last_login_at)}`
+                                  : user.created_at
+                                    ? `Created ${formatTimestamp(user.created_at)}`
+                                    : "Seeded"}
+                              </small>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </article>
+
+                    <article className="surface-card">
+                      <div className="panel-header">
+                        <div>
+                          <p className="section-kicker">Invite teammate</p>
+                          <h3>Create workspace user</h3>
+                        </div>
+                      </div>
+                      {authSession.role !== "owner" ? (
+                        <p>Only owners can create new workspace users.</p>
+                      ) : (
+                        <>
+                          <div className="list-stack compact-list">
+                            {users.map((user) => (
+                              <div key={user.email} className="surface-inline-editor">
+                                <label className="field">
+                                  <span>Name</span>
+                                  <input
+                                    value={userDrafts[user.email]?.display_name ?? user.display_name}
+                                    onChange={(event) =>
+                                      setUserDrafts((current) => ({
+                                        ...current,
+                                        [user.email]: {
+                                          ...(current[user.email] ?? {
+                                            display_name: user.display_name,
+                                            role: user.role,
+                                            status: user.status,
+                                          }),
+                                          display_name: event.target.value,
+                                        },
+                                      }))
+                                    }
+                                  />
+                                </label>
+                                <label className="field">
+                                  <span>Role</span>
+                                  <select
+                                    value={userDrafts[user.email]?.role ?? user.role}
+                                    onChange={(event) =>
+                                      setUserDrafts((current) => ({
+                                        ...current,
+                                        [user.email]: {
+                                          ...(current[user.email] ?? {
+                                            display_name: user.display_name,
+                                            role: user.role,
+                                            status: user.status,
+                                          }),
+                                          role: event.target.value,
+                                        },
+                                      }))
+                                    }
+                                  >
+                                    {["member", "investor", "owner"].map((role) => (
+                                      <option key={role} value={role}>
+                                        {role}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <label className="field">
+                                  <span>Status</span>
+                                  <select
+                                    value={userDrafts[user.email]?.status ?? user.status}
+                                    onChange={(event) =>
+                                      setUserDrafts((current) => ({
+                                        ...current,
+                                        [user.email]: {
+                                          ...(current[user.email] ?? {
+                                            display_name: user.display_name,
+                                            role: user.role,
+                                            status: user.status,
+                                          }),
+                                          status: event.target.value,
+                                        },
+                                      }))
+                                    }
+                                  >
+                                    {["active", "suspended"].map((status) => (
+                                      <option key={status} value={status}>
+                                        {status}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <div className="button-row inline-editor-actions">
+                                  <button
+                                    className="ghost-action"
+                                    disabled={isSubmittingPanel}
+                                    onClick={() => void handleUpdateUser(user.email)}
+                                    type="button"
+                                  >
+                                    Save access
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="form-grid">
+                            <label className="field">
+                              <span>Name</span>
+                              <input
+                                value={userForm.display_name}
+                                onChange={(event) =>
+                                  setUserForm((current) => ({
+                                    ...current,
+                                    display_name: event.target.value,
+                                  }))
+                                }
+                              />
+                            </label>
+                            <label className="field">
+                              <span>Role</span>
+                              <select
+                                value={userForm.role}
+                                onChange={(event) =>
+                                  setUserForm((current) => ({ ...current, role: event.target.value }))
+                                }
+                              >
+                                {["member", "investor", "owner"].map((role) => (
+                                  <option key={role} value={role}>
+                                    {role}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="field field-full">
+                              <span>Email</span>
+                              <input
+                                value={userForm.email}
+                                onChange={(event) =>
+                                  setUserForm((current) => ({ ...current, email: event.target.value }))
+                                }
+                              />
+                            </label>
+                            <label className="field field-full">
+                              <span>Temporary password</span>
+                              <input
+                                type="password"
+                                value={userForm.password}
+                                onChange={(event) =>
+                                  setUserForm((current) => ({ ...current, password: event.target.value }))
+                                }
+                              />
+                            </label>
+                          </div>
+                          <div className="button-row">
+                            <button
+                              className="primary-action"
+                              disabled={
+                                isSubmittingPanel ||
+                                !userForm.email ||
+                                !userForm.password ||
+                                !userForm.display_name
+                              }
+                              onClick={() => void handleCreateUser()}
+                              type="button"
+                            >
+                              {isSubmittingPanel ? "Saving..." : "Create user"}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </article>
+                  </section>
                 </>
               )}
 
@@ -1838,7 +2110,7 @@ function App() {
                       {selectedArtifact ? (
                         artifactView === "preview" ? (
                           <div className="artifact-markdown">
-                            <Markdown content={artifactDraft} />
+                            <MarkdownRenderer content={artifactDraft} />
                           </div>
                         ) : (
                           <textarea
@@ -2331,7 +2603,10 @@ function App() {
                             <p className="section-kicker">Input configuration</p>
                             <div className="upload-zone">
                               <strong>{uploadFile ? uploadFile.name : "Choose pitch deck or document"}</strong>
-                              <p>Supports text and PDF today. Uploaded files become workspace memory.</p>
+                              <p>
+                                Supports text, PDF, DOCX, PPTX, XLSX, CSV, JSON, and HTML. Uploaded files
+                                become workspace memory.
+                              </p>
                               <label className="ghost-action upload-button">
                                 <input
                                   hidden
@@ -2374,6 +2649,27 @@ function App() {
                               >
                                 {isUploading ? "Uploading..." : "Add to workspace memory"}
                               </button>
+                            </div>
+                            <div className="list-stack compact-list">
+                              {uploads.slice(0, 4).map((upload) => (
+                                <div key={upload.id} className="list-row">
+                                  <div>
+                                    <strong>{upload.filename}</strong>
+                                    <p>
+                                      {upload.storage_backend.toUpperCase()}
+                                      {upload.content_type ? ` · ${upload.content_type}` : ""}
+                                    </p>
+                                  </div>
+                                  <div className="list-side">
+                                    <span className="status-pill muted">{formatTimestamp(upload.created_at)}</span>
+                                    {upload.storage_url ? (
+                                      <a className="inline-link" href={upload.storage_url} rel="noreferrer" target="_blank">
+                                        View
+                                      </a>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           </div>
 

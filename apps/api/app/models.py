@@ -100,6 +100,27 @@ class Contact(BaseModel):
     last_touch: str
 
 
+class WorkspaceUser(BaseModel):
+    email: str
+    workspace_id: str
+    display_name: str
+    role: str
+    status: str = "active"
+    created_at: Optional[str] = None
+    last_login_at: Optional[str] = None
+
+
+class UploadRecord(BaseModel):
+    id: str
+    workspace_id: str
+    filename: str
+    stored_path: str
+    storage_backend: str
+    storage_url: Optional[str] = None
+    content_type: Optional[str] = None
+    created_at: str
+
+
 class Artifact(BaseModel):
     id: str
     title: str
@@ -300,6 +321,21 @@ class AuthSession(BaseModel):
     email: str
     workspace_id: str
     display_name: str
+    role: str
+
+
+class WorkspaceUserCreateRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=200)
+    password: str = Field(min_length=8, max_length=200)
+    display_name: str = Field(min_length=1, max_length=120)
+    role: str = Field(min_length=1, max_length=60)
+
+
+class WorkspaceUserUpdateRequest(BaseModel):
+    display_name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    role: Optional[str] = Field(default=None, min_length=1, max_length=60)
+    status: Optional[str] = Field(default=None, min_length=1, max_length=60)
+    password: Optional[str] = Field(default=None, min_length=8, max_length=200)
 
 
 class ChatResponse(BaseModel):
@@ -339,6 +375,7 @@ class InvestorRoomActionResponse(BaseModel):
 
 
 class UploadResponse(BaseModel):
+    upload: UploadRecord
     knowledge_source: KnowledgeSource
     artifact: Artifact
     message: str

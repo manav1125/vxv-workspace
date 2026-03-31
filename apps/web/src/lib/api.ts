@@ -6,7 +6,9 @@ import type {
   ChatRequest,
   ChatResponse,
   InvestorRoomActionResponse,
+  UploadRecord,
   UploadResponse,
+  WorkspaceUser,
 } from "../types";
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
@@ -51,6 +53,41 @@ export function login(email: string, password: string): Promise<AuthSession> {
 
 export function fetchSession(): Promise<AuthSession> {
   return api<AuthSession>("/api/auth/session");
+}
+
+export function fetchUsers(): Promise<WorkspaceUser[]> {
+  return api<WorkspaceUser[]>("/api/users");
+}
+
+export function createUser(payload: {
+  email: string;
+  password: string;
+  display_name: string;
+  role: string;
+}) {
+  return api<WorkspaceUser>("/api/users", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function fetchUploads(): Promise<UploadRecord[]> {
+  return api<UploadRecord[]>("/api/uploads");
+}
+
+export function updateUser(
+  email: string,
+  payload: {
+    display_name?: string;
+    role?: string;
+    status?: string;
+    password?: string;
+  },
+) {
+  return api<WorkspaceUser>(`/api/users/${encodeURIComponent(email)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function fetchBootstrap(): Promise<BootstrapResponse> {

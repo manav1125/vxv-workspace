@@ -27,9 +27,10 @@ The web app now includes:
 - founder-first module surfaces for inbox, strategy, team, execution, artifacts, capital, and apps
 - an internal app library plus immersive app run view
 - session-based login against the API
+- workspace user management for owners, including role and status updates
 - artifact preview/edit workflows, approval handling, and investor-room rendering
 - real upload flow in the app surface that ingests documents into workspace memory
-- `@agentscope-ai/design` and `@agentscope-ai/chat` where they help without forcing the whole UI into a generic chatbot shell
+- a lighter markdown rendering path that keeps the frontend bundle small enough for real staging use
 
 ## Backend foundation
 
@@ -57,6 +58,7 @@ The demo orchestration layer is intentionally thin. It already separates:
 It also now supports basic stateful founder actions:
 
 - authenticate into a workspace session
+- create additional workspace users and manage roles/status
 - launch an app into a tracked run
 - save artifact edits through the API
 - approve, revise, or reject approval-gated runs
@@ -68,6 +70,7 @@ It also now supports basic stateful founder actions:
 - add and update investor pipeline entries
 - add broader relationship contacts into the workspace CRM layer
 - upload documents into workspace memory and convert them into artifacts when possible
+- persist uploads in either local disk or S3-compatible object storage
 
 When optional runtime dependencies and model credentials are present, the
 chat path can also use a real AgentScope `DialogAgent` instead of the fallback
@@ -142,6 +145,58 @@ export VXV_ADMIN_PASSWORD=...
 export VXV_ADMIN_NAME=...
 ```
 
+For an external auth provider or reverse proxy, you can switch to trusted
+header mode:
+
+```bash
+export VXV_AUTH_MODE=trusted-header
+export VXV_TRUSTED_EMAIL_HEADER=X-Forwarded-Email
+export VXV_TRUSTED_NAME_HEADER=X-Forwarded-User
+export VXV_TRUSTED_ROLE_HEADER=X-Forwarded-Role
+```
+
+For direct bearer-token validation against an external identity provider, you can
+also use OIDC mode:
+
+```bash
+export VXV_AUTH_MODE=oidc
+export VXV_OIDC_ISSUER=https://your-provider.example.com/
+export VXV_OIDC_AUDIENCE=vxv-workspace
+export VXV_OIDC_JWKS_URL=https://your-provider.example.com/.well-known/jwks.json
+```
+
+Optional OIDC tuning:
+
+- `VXV_OIDC_EMAIL_CLAIM`
+- `VXV_OIDC_NAME_CLAIM`
+- `VXV_OIDC_ROLE_CLAIM`
+- `VXV_OIDC_DEFAULT_ROLE`
+- `VXV_OIDC_SHARED_SECRET` for simpler HS256 proxy tokens in non-production setups
+
+The persistence layer now supports either:
+
+- local SQLite via `VXV_DB_PATH`
+- managed Postgres via `DATABASE_URL`
+
+The upload storage layer now supports either:
+
+- local disk via `VXV_UPLOAD_DIR`
+- S3-compatible object storage via:
+  - `VXV_STORAGE_MODE=s3`
+  - `VXV_S3_BUCKET`
+  - `VXV_S3_PREFIX`
+  - `VXV_S3_ENDPOINT_URL`
+  - `VXV_S3_PUBLIC_BASE_URL`
+
+The ingestion pipeline currently extracts text from:
+
+- `.txt`, `.md`, `.json`, `.csv`
+- `.pdf`
+- `.docx`
+- `.pptx`
+- `.xlsx`
+- `.html`
+
 ## Render deployment
 
 The repo now includes a starter Blueprint at `render.yaml` for a two-service
@@ -157,14 +212,17 @@ The intended environment variables are:
 
 - API service:
   - `CORS_ORIGINS`
+  - `DATABASE_URL`
   - one model provider key such as `OPENAI_API_KEY`
+  - optional auth mode settings such as `VXV_AUTH_MODE`
+  - optional object storage settings such as `VXV_STORAGE_MODE`
 - Web service:
   - `VITE_API_BASE_URL` set to the public URL of the API service
 
-Today this is best treated as a staging deployment. The backend now persists to a
-SQLite-backed store on disk, which is a stronger local/staging foundation than
-pure in-memory or JSON files, but it is not yet a production-grade multi-user
-platform architecture.
+Today this is best treated as a staging deployment unless you also provide a
+managed Postgres database and non-ephemeral upload storage. The codebase now
+supports both, but Render still needs those environment variables/resources
+configured for a true production deployment.
 
 ## Notes
 

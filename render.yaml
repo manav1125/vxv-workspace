@@ -13,6 +13,14 @@ services:
         value: 3.11.11
       - key: CORS_ORIGINS
         sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: VXV_AUTH_MODE
+        value: local
+      - key: VXV_UPLOAD_DIR
+        value: /tmp/vxv-uploads
+      - key: VXV_STORAGE_MODE
+        value: local
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_MODEL
@@ -25,6 +33,20 @@ services:
         sync: false
       - key: DASHSCOPE_MODEL
         value: qwen-plus
+      - key: VXV_OIDC_ISSUER
+        sync: false
+      - key: VXV_OIDC_AUDIENCE
+        sync: false
+      - key: VXV_OIDC_JWKS_URL
+        sync: false
+      - key: VXV_S3_BUCKET
+        sync: false
+      - key: VXV_S3_PREFIX
+        sync: false
+      - key: VXV_S3_ENDPOINT_URL
+        sync: false
+      - key: VXV_S3_PUBLIC_BASE_URL
+        sync: false
 
   - type: web
     name: vxv-workspace-web
