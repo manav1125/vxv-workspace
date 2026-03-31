@@ -1,0 +1,18 @@
+{
+  "name": "vxv-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "overrides": {
+    "@ant-design/x": "2.1.3",
+    "@rc-component/util": "1.10.0",
+    "antd": "5.23.0"
+  },
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev:web": "npm --workspace apps/web run dev",
+    "build:web": "npm --workspace apps/web run build",
+    "preview:web": "npm --workspace apps/web run preview"
+  }
+}

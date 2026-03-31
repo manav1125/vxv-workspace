@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vxv-workspace-api"
+version = "0.1.0"
+description = "Founder-first unified workspace API scaffold aligned to AgentScope"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "fastapi>=0.115,<1.0",
+  "uvicorn[standard]>=0.30,<1.0",
+  "pydantic>=2.8,<3.0"
+]
+
+[project.optional-dependencies]
+agents = [
+  "agentscope==0.1.6",
+  "reme==1.0.3"
+]
+dev = [
+  "httpx>=0.27,<1.0",
+  "pytest>=8.3,<9.0"
+]
+
+[tool.setuptools]
+packages = ["app"]
