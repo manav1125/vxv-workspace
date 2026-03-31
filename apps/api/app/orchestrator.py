@@ -82,6 +82,57 @@ class FounderOrchestrator:
         content = f"""# Unified Operating Plan\n\n## Founder request\n{message}\n\n## Plan shape\n- Clarify the strategic goal\n- Assign the right agent owners\n- Generate artifacts and cadences off the same operating spine\n\n## Recommended next moves\n1. Lock the wedge\n2. Choose the next operating workflow\n3. Publish the artifact into the shared workspace\n"""
         return title, summary, content, ArtifactKind.PLAN
 
+    def _pick_app_id(self, request: ChatRequest) -> str | None:
+        lowered = request.message.lower()
+        if any(keyword in lowered for keyword in ["deck", "pitch", "memo", "investor update"]):
+            return "app-pitch-reviewer"
+        if any(keyword in lowered for keyword in ["customer", "interview", "persona"]):
+            return "app-customer-research"
+        if any(keyword in lowered for keyword in ["founder review", "weekly review", "cadence"]):
+            return "app-founder-review"
+        return None
+
+    def _context_items(self, request: ChatRequest, artifact_title: str) -> list[str]:
+        context = [
+            f"Workspace mission: {self.store.workspace.mission}",
+            f"Primary KPI: {self.store.workspace.primary_kpi}",
+        ]
+        context.extend(
+            f"Goal: {goal.title} ({goal.status})" for goal in self.store.goals[:2]
+        )
+        context.extend(
+            f"Knowledge: {source.title} [{source.source_type}]"
+            for source in self.store.knowledge_sources[:2]
+        )
+        context.append(f"Active artifact: {artifact_title}")
+        if request.selected_artifact_id:
+            selected = next(
+                (artifact for artifact in self.store.artifacts if artifact.id == request.selected_artifact_id),
+                None,
+            )
+            if selected is not None:
+                context.append(f"Founder referenced artifact: {selected.title}")
+        return context
+
+    def _next_actions(self, request: ChatRequest) -> list[str]:
+        if request.module == ModuleKey.CAPITAL:
+            return [
+                "Publish the latest artifact to the investor room",
+                "Queue diligence follow-up for top investors",
+                "Ask FundraiseAgent to tighten the round narrative",
+            ]
+        if request.module == ModuleKey.APPS:
+            return [
+                "Launch the suggested app with the current prompt",
+                "Review the generated artifact and save edits",
+                "Route the output back into the command thread",
+            ]
+        return [
+            "Keep working in the same command thread",
+            "Promote the output into a durable artifact",
+            "Delegate follow-through to the right agent or app",
+        ]
+
     def _system_prompt(self, request: ChatRequest, agent_name: str, role: str) -> str:
         goals = "\n".join(f"- {goal.title}: {goal.kpi}" for goal in self.store.goals[:3])
         return (
@@ -200,10 +251,14 @@ class FounderOrchestrator:
             task_run=task,
             artifact=artifact,
             suggestions=[
-                "Turn this into a weekly founder review",
-                "Create an investor-facing version",
-                "Delegate follow-through to the right agent team",
+                "Turn this into a tracked founder workflow",
+                "Use an app or skill if a deeper workflow is needed",
+                "Keep building on this in the same thread",
             ],
+            routed_module=active_agent.module,
+            context_items=self._context_items(request, artifact.title),
+            next_actions=self._next_actions(request),
+            launched_app_id=self._pick_app_id(request),
             updated_metrics=self.store.metrics(),
         )
 

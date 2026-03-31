@@ -235,6 +235,10 @@ export interface ChatResponse {
   task_run: TaskRun;
   artifact: Artifact;
   suggestions: string[];
+  routed_module: ModuleKey;
+  context_items: string[];
+  next_actions: string[];
+  launched_app_id?: string | null;
   updated_metrics: DashboardMetrics;
 }
 

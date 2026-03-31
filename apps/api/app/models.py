@@ -344,6 +344,10 @@ class ChatResponse(BaseModel):
     task_run: TaskRun
     artifact: Artifact
     suggestions: List[str]
+    routed_module: ModuleKey
+    context_items: List[str]
+    next_actions: List[str]
+    launched_app_id: Optional[str] = None
     updated_metrics: DashboardMetrics
 
 

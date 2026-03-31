@@ -890,6 +890,122 @@ button {
   justify-content: flex-end;
 }
 
+.onboarding-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+}
+
+.onboarding-sidebar {
+  padding: 1.5rem 1.25rem;
+  background: rgba(7, 13, 25, 0.92);
+  border-right: 1px solid var(--line);
+}
+
+.onboarding-main {
+  padding: 2rem;
+}
+
+.onboarding-card {
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+.onboarding-steps {
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 1.5rem;
+}
+
+.onboarding-step {
+  padding: 1rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.onboarding-step.active {
+  background: rgba(89, 225, 202, 0.08);
+  border-color: rgba(89, 225, 202, 0.2);
+}
+
+.onboarding-step small {
+  display: block;
+  margin-bottom: 0.4rem;
+  color: var(--accent);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.command-focus-row {
+  display: flex;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.active-chip {
+  background: rgba(89, 225, 202, 0.12);
+  color: var(--text);
+  border: 1px solid rgba(89, 225, 202, 0.18);
+}
+
+.command-thread-card {
+  display: grid;
+  gap: 1rem;
+}
+
+.command-thread {
+  max-height: 560px;
+  overflow: auto;
+  padding-right: 0.25rem;
+}
+
+.split-panel {
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.split-sidebar,
+.split-main {
+  min-height: 0;
+}
+
+.compact-card {
+  min-height: 100%;
+}
+
+.inset-card {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.prose-surface {
+  min-height: 320px;
+}
+
+.prose-surface p,
+.prose-surface li {
+  color: var(--text);
+  line-height: 1.7;
+}
+
+.prose-surface h1,
+.prose-surface h2,
+.prose-surface h3 {
+  font-family: "Newsreader", serif;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.panel-header-spaced {
+  margin-top: 1.5rem;
+}
+
+.stacked-buttons {
+  grid-template-columns: 1fr;
+}
+
 @media (max-width: 1280px) {
   .content-layout {
     grid-template-columns: minmax(0, 1fr);
@@ -904,7 +1020,9 @@ button {
   .card-grid-two,
   .artifact-layout,
   .two-column,
-  .app-run-grid {
+  .app-run-grid,
+  .split-panel,
+  .onboarding-shell {
     grid-template-columns: 1fr;
   }
 
@@ -922,6 +1040,10 @@ button {
 @media (max-width: 960px) {
   .vxv-shell {
     grid-template-columns: 1fr;
+  }
+
+  .onboarding-main {
+    padding: 1rem;
   }
 
   .workspace-nav {
