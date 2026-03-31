@@ -30,6 +30,7 @@ from .models import (
     WorkspaceApp,
     now_iso,
 )
+from .persistence import SqlitePersistence
 from .runtime import detect_runtime_capabilities
 
 
@@ -51,6 +52,7 @@ def _entity_id(prefix: str) -> str:
 
 @dataclass
 class DemoStore:
+    persistence: SqlitePersistence = field(default_factory=SqlitePersistence)
     workspace: Workspace = field(default_factory=lambda: Workspace(
         id="workspace-vxv",
         name="VXV Workspace",
@@ -447,23 +449,19 @@ class DemoStore:
             content="""## Welcome to VXV Workspace\n\nI can coordinate strategy, team leverage, execution rhythms, artifact production, and fundraising prep from one place.\n\nTry asking for:\n- a founder weekly review\n- a GTM experiment plan\n- an investor memo refresh\n""",
         )
     ])
-    state_path: str = field(default_factory=lambda: (
-        ""
-        if os.getenv("PYTEST_CURRENT_TEST") or os.getenv("VXV_DISABLE_PERSISTENCE") == "1"
-        else os.getenv("VXV_STATE_PATH", "/tmp/vxv-workspace-state.json")
-    ))
+    disable_persistence: bool = field(default_factory=lambda: os.getenv("VXV_DISABLE_PERSISTENCE") == "1")
 
     def __post_init__(self) -> None:
-        if not self.state_path:
+        if self.disable_persistence:
             return
-        path = Path(self.state_path)
-        if path.exists():
-            self._load(path)
+        payload = self.persistence.load_state(self.workspace.id)
+        if payload:
+            self._load(payload)
         else:
             self.persist()
 
-    def _load(self, path: Path) -> None:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+    def _load(self, payload_text: str) -> None:
+        payload = json.loads(payload_text)
         self.workspace = Workspace.model_validate(payload["workspace"])
         self.goals = [Goal.model_validate(item) for item in payload["goals"]]
         self.agents = [AgentProfile.model_validate(item) for item in payload["agents"]]
@@ -479,10 +477,8 @@ class DemoStore:
         self.messages = [ChatMessage.model_validate(item) for item in payload["messages"]]
 
     def persist(self) -> None:
-        if not self.state_path:
+        if self.disable_persistence:
             return
-        path = Path(self.state_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "workspace": self.workspace.model_dump(),
             "goals": [item.model_dump() for item in self.goals],
@@ -498,7 +494,7 @@ class DemoStore:
             "investor_room": self.investor_room.model_dump(),
             "messages": [item.model_dump() for item in self.messages],
         }
-        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        self.persistence.save_state(self.workspace.id, json.dumps(payload, indent=2))
 
     def metrics(self) -> DashboardMetrics:
         return DashboardMetrics(
@@ -769,6 +765,35 @@ class DemoStore:
                 break
         self.persist()
         return investor
+
+    def ingest_upload(
+        self,
+        *,
+        title: str,
+        module: ModuleKey,
+        source_type: str,
+        extracted_text: str,
+        linked_run_id: str | None = None,
+    ) -> tuple[KnowledgeSource, Artifact]:
+        source = self.add_knowledge_source(
+            title=title,
+            source_type=source_type,
+            status="Connected",
+            freshness="Today",
+        )
+        artifact = self.upsert_artifact(
+            title=f"{title} Ingestion",
+            module=module,
+            summary=f"Ingested document available to the workspace from {title}.",
+            content=(
+                f"# {title}\n\n"
+                "## Extracted context\n"
+                f"{extracted_text[:6000] or 'No text could be extracted from the upload yet.'}\n"
+            ),
+            kind=ArtifactKind.BRIEF,
+            linked_run_id=linked_run_id or _task_id(),
+        )
+        return source, artifact
 
     def update_artifact_content(self, artifact_id: str, content: str) -> Artifact:
         artifact = self.get_artifact(artifact_id)

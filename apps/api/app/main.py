@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
+from typing import Optional
+from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
+from .models import ModuleKey
 from .models import (
     AgentProfile,
     AgentUpdateRequest,
     ActionResponse,
     AppLaunchRequest,
+    AuthSession,
     ApprovalRequest,
     Artifact,
     ArtifactUpdateRequest,
@@ -27,12 +33,16 @@ from .models import (
     InvestorRoomActionResponse,
     KnowledgeSource,
     KnowledgeSourceCreateRequest,
+    LoginRequest,
     PublishInvestorRoomRequest,
+    UploadResponse,
     Workspace,
     WorkspaceSetupRequest,
     WorkflowLaunchRequest,
+    now_iso,
 )
 from .orchestrator import FounderOrchestrator
+from .persistence import SqlitePersistence
 from .store import DemoStore
 
 app = FastAPI(
@@ -56,6 +66,23 @@ app.add_middleware(
 
 store = DemoStore()
 orchestrator = FounderOrchestrator(store)
+auth_backend = SqlitePersistence()
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    public_paths = {"/health", "/api/auth/login"}
+    if request.method == "OPTIONS" or request.url.path in public_paths or not request.url.path.startswith("/api/"):
+        return await call_next(request)
+
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.replace("Bearer ", "", 1).strip() if auth_header.startswith("Bearer ") else ""
+    session = auth_backend.get_session(token) if token else None
+    if session is None:
+        return JSONResponse(status_code=401, content={"detail": "Authentication required"})
+
+    request.state.session = session
+    return await call_next(request)
 
 
 @app.get("/health")
@@ -66,6 +93,22 @@ def health() -> dict[str, str]:
 @app.get("/api/bootstrap", response_model=BootstrapResponse)
 def get_bootstrap() -> BootstrapResponse:
     return store.bootstrap()
+
+
+@app.post("/api/auth/login", response_model=AuthSession)
+def post_login(request: LoginRequest) -> AuthSession:
+    session = auth_backend.create_session(request.email, request.password)
+    if session is None:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    return AuthSession.model_validate(session)
+
+
+@app.get("/api/auth/session", response_model=AuthSession)
+def get_session(request: Request) -> AuthSession:
+    session = getattr(request.state, "session", None)
+    if session is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return AuthSession.model_validate(session)
 
 
 @app.get("/api/workspaces/current")
@@ -259,7 +302,62 @@ def post_publish_investor_room(request: PublishInvestorRoomRequest) -> InvestorR
     return orchestrator.publish_investor_room(request)
 
 
-def request_last_touch_today() -> str:
-    from .models import now_iso
+@app.post("/api/uploads", response_model=UploadResponse)
+async def post_upload(
+    file: UploadFile = File(...),
+    module: ModuleKey = Form(...),
+    title: Optional[str] = Form(default=None),
+) -> UploadResponse:
+    upload_id = f"upload-{uuid4().hex[:8]}"
+    uploads_dir = Path(os.getenv("VXV_UPLOAD_DIR", "/tmp/vxv-uploads"))
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    filename = file.filename or "document"
+    stored_path = uploads_dir / f"{upload_id}-{filename}"
+    content = await file.read()
+    stored_path.write_bytes(content)
+    auth_backend.record_upload(
+        upload_id=upload_id,
+        workspace_id=store.workspace.id,
+        filename=filename,
+        stored_path=str(stored_path),
+        content_type=file.content_type,
+    )
+    extracted_text = extract_text_from_upload(content, filename, file.content_type)
+    source, artifact = store.ingest_upload(
+        title=title or filename,
+        module=module,
+        source_type="upload",
+        extracted_text=extracted_text,
+    )
+    return UploadResponse(
+        knowledge_source=source,
+        artifact=artifact,
+        message="Document uploaded and added to workspace memory.",
+    )
 
+
+def request_last_touch_today() -> str:
     return now_iso().split("T", 1)[0]
+
+
+def extract_text_from_upload(content: bytes, filename: str, content_type: str | None) -> str:
+    lowered_name = filename.lower()
+    lowered_type = (content_type or "").lower()
+    if lowered_name.endswith((".txt", ".md", ".json", ".csv")) or lowered_type.startswith("text/"):
+        return content.decode("utf-8", errors="ignore")
+
+    if lowered_name.endswith(".pdf") or lowered_type == "application/pdf":
+        try:
+            from pypdf import PdfReader
+            from io import BytesIO
+
+            reader = PdfReader(BytesIO(content))
+            text = "\n".join(page.extract_text() or "" for page in reader.pages).strip()
+            return text or "PDF uploaded successfully, but the text extractor returned no content."
+        except Exception:
+            return "PDF uploaded successfully. Text extraction is unavailable for this file in the current runtime."
+
+    return (
+        f"Uploaded file `{filename}` at {now_iso()}.\n"
+        "The binary file is now attached to workspace memory, but it could not be converted into plain text automatically."
+    )

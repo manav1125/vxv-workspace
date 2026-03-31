@@ -2,25 +2,31 @@ import { Markdown } from "@agentscope-ai/chat";
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  clearAuthToken,
   createContact,
   createFundraiseInvestor,
   createGoal,
   createKnowledgeSource,
   decideApproval,
+  fetchSession,
   fetchBootstrap,
   launchApp,
   launchWorkflow,
+  login,
   publishInvestorRoom,
   saveArtifact,
   sendFounderMessage,
+  setAuthToken,
   updateAgent,
   updateFundraiseInvestor,
   updateGoal,
   updateWorkspace,
+  uploadDocument,
 } from "./lib/api";
 import type {
   AppCategory,
   Artifact,
+  AuthSession,
   BootstrapResponse,
   ChatMessage,
   ModuleKey,
@@ -192,6 +198,12 @@ function App() {
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmittingPanel, setIsSubmittingPanel] = useState(false);
+  const [authSession, setAuthSession] = useState<AuthSession | null>(null);
+  const [loginForm, setLoginForm] = useState({
+    email: "founder@vxv.network",
+    password: "vxv-demo",
+  });
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [workspaceForm, setWorkspaceForm] = useState({
     company_name: "",
     founder_name: "",
@@ -238,11 +250,16 @@ function App() {
     relationship_stage: "New",
     last_touch: "",
   });
+  const [uploadTitle, setUploadTitle] = useState("");
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
     const load = async () => {
       try {
         setIsLoading(true);
+        const session = await fetchSession();
+        setAuthSession(session);
         const bootstrap = await fetchBootstrap();
         setData(bootstrap);
         const initialArtifact =
@@ -274,7 +291,9 @@ function App() {
           });
         }
       } catch (loadError) {
-        setError(loadError instanceof Error ? loadError.message : "Unknown error");
+        clearAuthToken();
+        setAuthSession(null);
+        setError(loadError instanceof Error ? loadError.message : null);
       } finally {
         setIsLoading(false);
       }
@@ -500,6 +519,22 @@ function App() {
     }
   };
 
+  const handleLogin = async () => {
+    try {
+      setIsAuthenticating(true);
+      setError(null);
+      const session = await login(loginForm.email, loginForm.password);
+      setAuthToken(session.token);
+      setAuthSession(session);
+      await reloadWorkspace();
+    } catch (authError) {
+      setError(authError instanceof Error ? authError.message : "Unable to log in");
+    } finally {
+      setIsAuthenticating(false);
+      setIsLoading(false);
+    }
+  };
+
   const handleSendMessage = async (message: string) => {
     if (!data) {
       return;
@@ -698,6 +733,34 @@ function App() {
     }
   };
 
+  const handleUploadDocument = async () => {
+    if (!uploadFile) {
+      return;
+    }
+
+    try {
+      setIsUploading(true);
+      const response = await uploadDocument(
+        uploadFile,
+        activeModule === "apps" ? "apps" : activeModule,
+        uploadTitle || uploadFile.name,
+      );
+      await reloadWorkspace({
+        preferredModule: activeModule === "inbox" ? "artifacts" : activeModule,
+        preferredArtifactId: response.artifact.id,
+      });
+      setSelectedArtifactId(response.artifact.id);
+      setArtifactDraft(response.artifact.content);
+      setUploadFile(null);
+      setUploadTitle("");
+      setActionNotice(response.message);
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "Unable to upload document");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const handleWorkspaceSetup = async () => {
     try {
       setIsSubmittingPanel(true);
@@ -888,6 +951,53 @@ function App() {
     return <div className="app-state">Loading VXV Workspace...</div>;
   }
 
+  if (!authSession) {
+    return (
+      <div className="login-shell">
+        <section className="login-card">
+          <p className="section-kicker">Founder access</p>
+          <h1>Log into VXV Workspace</h1>
+          <p>
+            Sign into the founder workspace to load your operating context, runs,
+            artifacts, and capital pipeline.
+          </p>
+          {error ? <p className="action-error">{error}</p> : null}
+          <div className="form-grid">
+            <label className="field field-full">
+              <span>Email</span>
+              <input
+                value={loginForm.email}
+                onChange={(event) =>
+                  setLoginForm((current) => ({ ...current, email: event.target.value }))
+                }
+              />
+            </label>
+            <label className="field field-full">
+              <span>Password</span>
+              <input
+                type="password"
+                value={loginForm.password}
+                onChange={(event) =>
+                  setLoginForm((current) => ({ ...current, password: event.target.value }))
+                }
+              />
+            </label>
+          </div>
+          <div className="button-row">
+            <button
+              className="primary-action"
+              disabled={isAuthenticating}
+              onClick={() => void handleLogin()}
+              type="button"
+            >
+              {isAuthenticating ? "Signing in..." : "Enter workspace"}
+            </button>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   if (error || !data) {
     return (
       <div className="app-state">
@@ -950,6 +1060,7 @@ function App() {
             <div className="topbar-actions">
               <div className="topbar-search">Command + K</div>
               <div className="topbar-pill">{data.integrations.mode}</div>
+              <div className="topbar-pill">{authSession.display_name}</div>
               {data.integrations.runtime_provider ? (
                 <div className="topbar-pill">{data.integrations.runtime_provider}</div>
               ) : null}
@@ -2219,9 +2330,23 @@ function App() {
                           <div className="surface-panel inset">
                             <p className="section-kicker">Input configuration</p>
                             <div className="upload-zone">
-                              <strong>Drop pitch deck or document here</strong>
-                              <p>Supports PDF, PPTX, KEY, MAX 50MB</p>
+                              <strong>{uploadFile ? uploadFile.name : "Choose pitch deck or document"}</strong>
+                              <p>Supports text and PDF today. Uploaded files become workspace memory.</p>
+                              <label className="ghost-action upload-button">
+                                <input
+                                  hidden
+                                  type="file"
+                                  onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)}
+                                />
+                                Select file
+                              </label>
                             </div>
+                            <input
+                              className="composer-input upload-title"
+                              placeholder="Optional upload title"
+                              value={uploadTitle}
+                              onChange={(event) => setUploadTitle(event.target.value)}
+                            />
                             <textarea
                               aria-label="App prompt"
                               className="composer-input app-prompt"
@@ -2239,6 +2364,16 @@ function App() {
                                 <span>Review strictness</span>
                                 <strong>Adversarial</strong>
                               </div>
+                            </div>
+                            <div className="button-row">
+                              <button
+                                className="ghost-action"
+                                disabled={!uploadFile || isUploading}
+                                onClick={() => void handleUploadDocument()}
+                                type="button"
+                              >
+                                {isUploading ? "Uploading..." : "Add to workspace memory"}
+                              </button>
                             </div>
                           </div>
 

@@ -1,18 +1,36 @@
 import type {
   ActionResponse,
   Artifact,
+  AuthSession,
   BootstrapResponse,
   ChatRequest,
   ChatResponse,
   InvestorRoomActionResponse,
+  UploadResponse,
 } from "../types";
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+const authTokenKey = "vxv-auth-token";
+
+function getAuthToken() {
+  return window.localStorage.getItem(authTokenKey) ?? "";
+}
+
+export function setAuthToken(token: string) {
+  window.localStorage.setItem(authTokenKey, token);
+}
+
+export function clearAuthToken() {
+  window.localStorage.removeItem(authTokenKey);
+}
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getAuthToken();
   const response = await fetch(`${apiBaseUrl}${path}`, {
     headers: {
-      "Content-Type": "application/json",
+      ...(init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers ?? {}),
     },
     ...init,
   });
@@ -22,6 +40,17 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return response.json() as Promise<T>;
+}
+
+export function login(email: string, password: string): Promise<AuthSession> {
+  return api<AuthSession>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export function fetchSession(): Promise<AuthSession> {
+  return api<AuthSession>("/api/auth/session");
 }
 
 export function fetchBootstrap(): Promise<BootstrapResponse> {
@@ -161,5 +190,19 @@ export function publishInvestorRoom(artifactId?: string) {
   return api<InvestorRoomActionResponse>("/api/investor-room/publish", {
     method: "POST",
     body: JSON.stringify({ artifact_id: artifactId }),
+  });
+}
+
+export function uploadDocument(file: File, module: string, title?: string) {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("module", module);
+  if (title) {
+    formData.append("title", title);
+  }
+
+  return api<UploadResponse>("/api/uploads", {
+    method: "POST",
+    body: formData,
   });
 }

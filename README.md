@@ -26,7 +26,9 @@ The web app now includes:
 - a dark editorial `VXV Workspace` shell aligned to the final Stitch direction
 - founder-first module surfaces for inbox, strategy, team, execution, artifacts, capital, and apps
 - an internal app library plus immersive app run view
+- session-based login against the API
 - artifact preview/edit workflows, approval handling, and investor-room rendering
+- real upload flow in the app surface that ingests documents into workspace memory
 - `@agentscope-ai/design` and `@agentscope-ai/chat` where they help without forcing the whole UI into a generic chatbot shell
 
 ## Backend foundation
@@ -54,6 +56,7 @@ The demo orchestration layer is intentionally thin. It already separates:
 
 It also now supports basic stateful founder actions:
 
+- authenticate into a workspace session
 - launch an app into a tracked run
 - save artifact edits through the API
 - approve, revise, or reject approval-gated runs
@@ -64,6 +67,7 @@ It also now supports basic stateful founder actions:
 - launch workflows into tracked runs and artifacts
 - add and update investor pipeline entries
 - add broader relationship contacts into the workspace CRM layer
+- upload documents into workspace memory and convert them into artifacts when possible
 
 When optional runtime dependencies and model credentials are present, the
 chat path can also use a real AgentScope `DialogAgent` instead of the fallback
@@ -119,6 +123,25 @@ source .venv/bin/activate
 pytest
 ```
 
+## Default login
+
+The API now uses session auth for `/api/*` routes other than the login endpoint.
+
+Default seeded credentials:
+
+```bash
+email: founder@vxv.network
+password: vxv-demo
+```
+
+Override them with:
+
+```bash
+export VXV_ADMIN_EMAIL=...
+export VXV_ADMIN_PASSWORD=...
+export VXV_ADMIN_NAME=...
+```
+
 ## Render deployment
 
 The repo now includes a starter Blueprint at `render.yaml` for a two-service
@@ -139,8 +162,9 @@ The intended environment variables are:
   - `VITE_API_BASE_URL` set to the public URL of the API service
 
 Today this is best treated as a staging deployment. The backend now persists to a
-JSON-backed store on disk, which is better than pure in-memory state, but it is
-not yet a production-grade multi-user persistence layer.
+SQLite-backed store on disk, which is a stronger local/staging foundation than
+pure in-memory or JSON files, but it is not yet a production-grade multi-user
+platform architecture.
 
 ## Notes
 

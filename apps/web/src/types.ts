@@ -176,6 +176,13 @@ export interface DashboardMetrics {
   warm_investors: number;
 }
 
+export interface AuthSession {
+  token: string;
+  email: string;
+  workspace_id: string;
+  display_name: string;
+}
+
 export interface BootstrapResponse {
   workspace: Workspace;
   goals: Goal[];
@@ -217,5 +224,11 @@ export interface ActionResponse {
 
 export interface InvestorRoomActionResponse {
   investor_room: InvestorRoom;
+  message: string;
+}
+
+export interface UploadResponse {
+  knowledge_source: KnowledgeSource;
+  artifact: Artifact;
   message: string;
 }

@@ -60,6 +60,21 @@ button {
   color: var(--text);
 }
 
+.login-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+}
+
+.login-card {
+  width: min(520px, 100%);
+  padding: 1.5rem;
+  background: linear-gradient(180deg, rgba(19, 31, 52, 0.98), rgba(14, 24, 42, 0.98));
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
 .vxv-shell {
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr);
@@ -512,6 +527,10 @@ button {
   min-height: 120px;
 }
 
+.upload-title {
+  min-height: 3rem;
+}
+
 .detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -543,6 +562,12 @@ button {
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--line);
   color: var(--text);
+}
+
+.upload-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .run-list,

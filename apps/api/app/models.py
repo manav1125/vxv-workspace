@@ -290,6 +290,18 @@ class WorkflowLaunchRequest(BaseModel):
     note: str = Field(min_length=1, max_length=4000)
 
 
+class LoginRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=200)
+    password: str = Field(min_length=3, max_length=200)
+
+
+class AuthSession(BaseModel):
+    token: str
+    email: str
+    workspace_id: str
+    display_name: str
+
+
 class ChatResponse(BaseModel):
     reply: ChatMessage
     active_agent: AgentProfile
@@ -323,6 +335,12 @@ class ActionResponse(BaseModel):
 
 class InvestorRoomActionResponse(BaseModel):
     investor_room: InvestorRoom
+    message: str
+
+
+class UploadResponse(BaseModel):
+    knowledge_source: KnowledgeSource
+    artifact: Artifact
     message: str
 
 
