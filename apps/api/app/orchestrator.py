@@ -10,9 +10,11 @@ from .models import (
     ChatRequest,
     ChatResponse,
     InvestorRoomActionResponse,
+    MemoryItem,
     ModuleKey,
     PublishInvestorRoomRequest,
     TaskStatus,
+    ThreadNode,
     WorkflowLaunchRequest,
 )
 from .runtime import AgentScopeRuntimeAdapter
@@ -114,6 +116,54 @@ class FounderOrchestrator:
                 context.append(f"Founder referenced artifact: {selected.title}")
         return context
 
+    def _memory_hits(self, request: ChatRequest, artifact) -> list[MemoryItem]:
+        hits: list[MemoryItem] = [
+            MemoryItem(
+                id=f"memory-active-artifact-{artifact.id}",
+                title=artifact.title,
+                summary=artifact.summary,
+                kind="artifact",
+                updated_at=artifact.updated_at,
+                source_id=artifact.id,
+                pinned=True,
+            )
+        ]
+        hits.extend(
+            MemoryItem(
+                id=f"memory-hit-{goal.id}",
+                title=goal.title,
+                summary=f"{goal.status} · KPI: {goal.kpi}",
+                kind="goal",
+                updated_at=goal.due_date,
+                source_id=goal.id,
+            )
+            for goal in self.store.goals[:2]
+        )
+        hits.extend(
+            MemoryItem(
+                id=f"memory-hit-{source.id}",
+                title=source.title,
+                summary=f"{source.source_type.title()} · {source.freshness}",
+                kind="knowledge",
+                updated_at=artifact.updated_at,
+                source_id=source.id,
+            )
+            for source in self.store.knowledge_sources[:2]
+        )
+        if request.module == ModuleKey.CAPITAL:
+            hits.extend(
+                MemoryItem(
+                    id=f"memory-hit-investor-{investor.id}",
+                    title=investor.name,
+                    summary=f"{investor.relationship_status} · {investor.next_step}",
+                    kind="relationship",
+                    updated_at=artifact.updated_at,
+                    source_id=investor.id,
+                )
+                for investor in self.store.fundraise_pipeline.investors[:2]
+            )
+        return hits
+
     def _next_actions(self, request: ChatRequest) -> list[str]:
         if request.module == ModuleKey.CAPITAL:
             return [
@@ -132,6 +182,69 @@ class FounderOrchestrator:
             "Promote the output into a durable artifact",
             "Delegate follow-through to the right agent or app",
         ]
+
+    def _build_nodes(self, request: ChatRequest, artifact, task, launched_app_id: str | None) -> list[ThreadNode]:
+        nodes = [
+            ThreadNode(
+                id=f"node-artifact-{artifact.id}",
+                kind="artifact",
+                title=artifact.title,
+                summary=artifact.summary,
+                status="ready",
+                expanded_by_default=True,
+                body=artifact.content[:1600],
+                artifact_id=artifact.id,
+                cta_label="Open artifact",
+            ),
+            ThreadNode(
+                id=f"node-run-{task.id}",
+                kind="run",
+                title=task.title,
+                summary=task.progress_label,
+                status=task.status.value,
+                bullet_points=[
+                    f"Agent: {task.owner_agent_id}",
+                    f"Trace: {task.trace_summary}",
+                    f"Outputs: {', '.join(task.outputs)}",
+                ],
+                task_run_id=task.id,
+            ),
+        ]
+        if task.requires_approval:
+            nodes.append(
+                ThreadNode(
+                    id=f"node-approval-{task.id}",
+                    kind="approval",
+                    title="Founder approval required",
+                    summary="This step needs your sign-off before external or irreversible work continues.",
+                    status="waiting",
+                    bullet_points=[
+                        "Approve to continue",
+                        "Request revision to tighten the output",
+                        "Reject to stop the action",
+                    ],
+                    task_run_id=task.id,
+                    cta_label="Review approval",
+                )
+            )
+        if launched_app_id:
+            app = self.store.get_app(launched_app_id)
+            nodes.append(
+                ThreadNode(
+                    id=f"node-app-{app.id}",
+                    kind="app",
+                    title=app.title,
+                    summary=app.summary,
+                    status=app.status,
+                    bullet_points=[
+                        f"Uses {len(app.skill_ids)} skills",
+                        f"Outputs: {', '.join(app.artifact_outputs)}",
+                    ],
+                    app_id=app.id,
+                    cta_label="Open app workspace",
+                )
+            )
+        return nodes
 
     def _system_prompt(self, request: ChatRequest, agent_name: str, role: str) -> str:
         goals = "\n".join(f"- {goal.title}: {goal.kpi}" for goal in self.store.goals[:3])
@@ -245,6 +358,7 @@ class FounderOrchestrator:
             content=reply_content,
         )
 
+        launched_app_id = self._pick_app_id(request)
         return ChatResponse(
             reply=reply,
             active_agent=active_agent,
@@ -258,7 +372,9 @@ class FounderOrchestrator:
             routed_module=active_agent.module,
             context_items=self._context_items(request, artifact.title),
             next_actions=self._next_actions(request),
-            launched_app_id=self._pick_app_id(request),
+            nodes=self._build_nodes(request, artifact, task, launched_app_id),
+            memory_hits=self._memory_hits(request, artifact),
+            launched_app_id=launched_app_id,
             updated_metrics=self.store.metrics(),
         )
 

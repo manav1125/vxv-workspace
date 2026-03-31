@@ -205,6 +205,16 @@ export interface UploadRecord {
   created_at: string;
 }
 
+export interface MemoryItem {
+  id: string;
+  title: string;
+  summary: string;
+  kind: string;
+  updated_at: string;
+  source_id?: string | null;
+  pinned?: boolean;
+}
+
 export interface BootstrapResponse {
   workspace: Workspace;
   goals: Goal[];
@@ -219,6 +229,7 @@ export interface BootstrapResponse {
   fundraise_pipeline: FundraisePipeline;
   investor_room: InvestorRoom;
   messages: ChatMessage[];
+  memory_items: MemoryItem[];
   integrations: IntegrationStatus;
   metrics: DashboardMetrics;
 }
@@ -238,6 +249,8 @@ export interface ChatResponse {
   routed_module: ModuleKey;
   context_items: string[];
   next_actions: string[];
+  nodes: ThreadNode[];
+  memory_hits: MemoryItem[];
   launched_app_id?: string | null;
   updated_metrics: DashboardMetrics;
 }
@@ -258,4 +271,19 @@ export interface UploadResponse {
   knowledge_source: KnowledgeSource;
   artifact: Artifact;
   message: string;
+}
+
+export interface ThreadNode {
+  id: string;
+  kind: string;
+  title: string;
+  summary: string;
+  status: string;
+  expanded_by_default?: boolean;
+  body?: string | null;
+  bullet_points: string[];
+  artifact_id?: string | null;
+  task_run_id?: string | null;
+  app_id?: string | null;
+  cta_label?: string | null;
 }

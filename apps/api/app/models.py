@@ -121,6 +121,16 @@ class UploadRecord(BaseModel):
     created_at: str
 
 
+class MemoryItem(BaseModel):
+    id: str
+    title: str
+    summary: str
+    kind: str
+    updated_at: str
+    source_id: Optional[str] = None
+    pinned: bool = False
+
+
 class Artifact(BaseModel):
     id: str
     title: str
@@ -182,6 +192,21 @@ class ChatMessage(BaseModel):
     created_at: str
 
 
+class ThreadNode(BaseModel):
+    id: str
+    kind: str
+    title: str
+    summary: str
+    status: str
+    expanded_by_default: bool = False
+    body: Optional[str] = None
+    bullet_points: List[str] = Field(default_factory=list)
+    artifact_id: Optional[str] = None
+    task_run_id: Optional[str] = None
+    app_id: Optional[str] = None
+    cta_label: Optional[str] = None
+
+
 class WorkflowDefinition(BaseModel):
     id: str
     title: str
@@ -241,6 +266,7 @@ class BootstrapResponse(BaseModel):
     fundraise_pipeline: FundraisePipeline
     investor_room: InvestorRoom
     messages: List[ChatMessage]
+    memory_items: List[MemoryItem]
     integrations: IntegrationStatus
     metrics: DashboardMetrics
 
@@ -347,6 +373,8 @@ class ChatResponse(BaseModel):
     routed_module: ModuleKey
     context_items: List[str]
     next_actions: List[str]
+    nodes: List[ThreadNode]
+    memory_hits: List[MemoryItem]
     launched_app_id: Optional[str] = None
     updated_metrics: DashboardMetrics
 

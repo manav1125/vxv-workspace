@@ -21,6 +21,7 @@ from .models import (
     Goal,
     InvestorRoom,
     KnowledgeSource,
+    MemoryItem,
     ModuleKey,
     SkillDefinition,
     TaskRun,
@@ -506,6 +507,54 @@ class DemoStore:
             ),
         )
 
+    def memory_items(self) -> list[MemoryItem]:
+        items: list[MemoryItem] = [
+            MemoryItem(
+                id="memory-workspace",
+                title="Founder operating context",
+                summary=f"{self.workspace.company_name} is focused on {self.workspace.primary_kpi.lower()}.",
+                kind="profile",
+                updated_at=now_iso(),
+                source_id=self.workspace.id,
+                pinned=True,
+            )
+        ]
+        items.extend(
+            MemoryItem(
+                id=f"memory-goal-{goal.id}",
+                title=goal.title,
+                summary=f"{goal.status} · KPI: {goal.kpi}",
+                kind="goal",
+                updated_at=goal.due_date,
+                source_id=goal.id,
+                pinned=index == 0,
+            )
+            for index, goal in enumerate(self.goals[:3])
+        )
+        items.extend(
+            MemoryItem(
+                id=f"memory-knowledge-{source.id}",
+                title=source.title,
+                summary=f"{source.source_type.title()} · {source.freshness}",
+                kind="knowledge",
+                updated_at=now_iso(),
+                source_id=source.id,
+            )
+            for source in self.knowledge_sources[:4]
+        )
+        items.extend(
+            MemoryItem(
+                id=f"memory-artifact-{artifact.id}",
+                title=artifact.title,
+                summary=artifact.summary,
+                kind="artifact",
+                updated_at=artifact.updated_at,
+                source_id=artifact.id,
+            )
+            for artifact in self.artifacts[:4]
+        )
+        return items
+
     def bootstrap(self) -> BootstrapResponse:
         return BootstrapResponse(
             workspace=self.workspace,
@@ -521,6 +570,7 @@ class DemoStore:
             fundraise_pipeline=self.fundraise_pipeline,
             investor_room=self.investor_room,
             messages=self.messages,
+            memory_items=self.memory_items(),
             integrations=detect_runtime_capabilities().to_model(),
             metrics=self.metrics(),
         )
