@@ -974,6 +974,48 @@ button {
   gap: 1rem;
 }
 
+.command-first-shell .workspace-nav {
+  width: 250px;
+}
+
+.surface-help {
+  margin: 0.85rem 0 0;
+  color: var(--muted);
+}
+
+.workbench-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.workbench-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-bottom: 0.25rem;
+}
+
+.workbench-tabs button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--muted);
+  padding: 0.65rem 1rem;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.workbench-tabs button.active {
+  border-color: rgba(241, 197, 126, 0.35);
+  background: rgba(241, 197, 126, 0.1);
+  color: var(--text);
+}
+
+.linked-tools-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
 .split-sidebar,
 .split-main {
   min-height: 0;

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { MarkdownRenderer } from "./components/MarkdownRenderer";
 import {
   clearAuthToken,
   createContact,
@@ -26,7 +27,6 @@ import {
   updateWorkspace,
   uploadDocument,
 } from "./lib/api";
-import { MarkdownRenderer } from "./components/MarkdownRenderer";
 import type {
   AppCategory,
   Artifact,
@@ -46,73 +46,42 @@ type AppSurface = "library" | "run";
 
 const surfaceOrder: SurfaceKey[] = ["command", "artifacts", "apps", "capital", "workspace"];
 
-const surfaceMeta: Record<
-  SurfaceKey,
-  { label: string; kicker: string; description: string }
-> = {
-  command: {
-    label: "Command",
-    kicker: "Default workspace",
-    description:
-      "Start with one founder thread. The system should gather context, route work, and keep building in the same place.",
-  },
-  artifacts: {
-    label: "Artifacts",
-    kicker: "Durable outputs",
-    description:
-      "Every meaningful output should remain editable, linked to a run, and reusable in later founder work.",
-  },
-  apps: {
-    label: "Apps",
-    kicker: "Immersive workflows",
-    description:
-      "Launch focused workflow tools that compose skills, agents, context, and artifacts inside the workspace.",
-  },
-  capital: {
-    label: "Capital",
-    kicker: "Fundraising workspace",
-    description:
-      "Keep investor readiness, pipeline movement, diligence, and the investor room inside the same operating system.",
-  },
-  workspace: {
-    label: "Workspace",
-    kicker: "Settings and systems",
-    description:
-      "Manage company context, access, knowledge, and guardrails without forcing those admin tasks to become the product.",
-  },
+const surfaceMeta: Record<SurfaceKey, { label: string; kicker: string }> = {
+  command: { label: "Command", kicker: "Primary" },
+  artifacts: { label: "Artifacts", kicker: "Workbench" },
+  apps: { label: "Apps", kicker: "Workbench" },
+  capital: { label: "Capital", kicker: "Workbench" },
+  workspace: { label: "Workspace", kicker: "Workbench" },
 };
 
-const moduleMeta: Record<
-  ModuleKey,
-  { label: string; description: string }
-> = {
+const moduleMeta: Record<ModuleKey, { label: string; description: string }> = {
   inbox: {
     label: "General",
-    description: "Use for routing, founder steering, and cross-workspace asks.",
+    description: "Cross-workspace asks, routing, and founder steering.",
   },
   strategy: {
     label: "Strategy",
-    description: "Use for planning, research, wedge clarity, and GTM direction.",
+    description: "Planning, research, GTM, and narrative work.",
   },
   team: {
     label: "Team",
-    description: "Use for AI teammate structure, budgets, permissions, and guardrails.",
+    description: "AI teammates, budgets, permissions, and escalations.",
   },
   execution: {
     label: "Execution",
-    description: "Use for workflows, cadences, blockers, and operational follow-through.",
+    description: "Cadences, workflows, blockers, and follow-through.",
   },
   artifacts: {
     label: "Artifacts",
-    description: "Use for memos, briefs, plans, and company memory.",
+    description: "Plans, briefs, memos, updates, and durable outputs.",
   },
   capital: {
     label: "Capital",
-    description: "Use for fundraising, investor updates, and diligence readiness.",
+    description: "Fundraising, investor updates, and diligence readiness.",
   },
   apps: {
     label: "Apps",
-    description: "Use when a richer workflow surface should be launched from the thread.",
+    description: "Use a richer workflow surface when chat alone is not enough.",
   },
 };
 
@@ -131,12 +100,12 @@ const appCategories: Array<"all" | AppCategory> = [
 const defaultSuggestions: Record<ModuleKey, string[]> = {
   inbox: [
     "What should I focus on this week across the workspace?",
-    "Summarize everything that needs my approval or intervention.",
-    "Turn our current progress into the next best operating plan.",
+    "Summarize anything blocked or waiting for me.",
+    "Turn the latest progress into the next best operating plan.",
   ],
   strategy: [
-    "Turn the founder vision into a 90-day operating plan.",
-    "Map our wedge, customer problem, and GTM priorities.",
+    "Turn the current vision into a 90-day operating plan.",
+    "Clarify our wedge, customer, and GTM priorities.",
     "Draft a customer research sprint for this week.",
   ],
   team: [
@@ -169,7 +138,7 @@ const defaultSuggestions: Record<ModuleKey, string[]> = {
 const founderLaunchCards = [
   {
     title: "Define your first goal",
-    body: "Establish the objective and KPI that should shape the next cycle of work.",
+    body: "Set the objective and KPI that should shape the next cycle of work.",
     action: "Set objective",
     module: "strategy" as ModuleKey,
     prompt:
@@ -185,14 +154,14 @@ const founderLaunchCards = [
   },
   {
     title: "Connect company knowledge",
-    body: "Ingest docs, notes, and systems so the command layer can ground its work.",
+    body: "Ingest docs and notes so the workspace can ground its work.",
     action: "Connect context",
     module: "artifacts" as ModuleKey,
     prompt: "Create the first workspace artifact and knowledge ingestion plan.",
   },
   {
     title: "Start a weekly founder review",
-    body: "Build a ritual for progress, decisions, blockers, and next actions.",
+    body: "Build a cadence for progress, decisions, blockers, and next actions.",
     action: "Set cadence",
     module: "execution" as ModuleKey,
     prompt:
@@ -404,9 +373,6 @@ function App() {
   }, [data]);
 
   useEffect(() => {
-    if (!data) {
-      return;
-    }
     setUserDrafts(
       Object.fromEntries(
         users.map((user) => [
@@ -419,7 +385,7 @@ function App() {
         ]),
       ),
     );
-  }, [data, users]);
+  }, [users]);
 
   useEffect(() => {
     if (!data) {
@@ -559,30 +525,6 @@ function App() {
     return defaultSuggestions[commandModule].slice(0, 3);
   }, [commandContext, commandModule]);
 
-  const focusModule = (module: ModuleKey) => {
-    if (module === "artifacts") {
-      setActiveSurface("artifacts");
-      return;
-    }
-    if (module === "apps") {
-      setActiveSurface("apps");
-      setAppSurface("run");
-      return;
-    }
-    if (module === "capital") {
-      setActiveSurface("capital");
-      setCapitalSurface("workspace");
-      return;
-    }
-    if (module === "team") {
-      setActiveSurface("workspace");
-      setWorkspacePanel("team");
-      return;
-    }
-    setActiveSurface("command");
-    setCommandModule(module === "team" ? "inbox" : module);
-  };
-
   const loadWorkspaceState = async (options?: {
     preferredArtifactId?: string;
     preferredAppId?: string;
@@ -673,22 +615,20 @@ function App() {
           return current;
         }
 
-        const nextMessages = [
-          ...current.messages,
-          {
-            id: `temp-user-${Date.now()}`,
-            role: "user" as const,
-            author: "Founder",
-            module: commandModule,
-            content: message,
-            created_at: new Date().toISOString(),
-          },
-          response.reply,
-        ];
-
         return {
           ...current,
-          messages: nextMessages,
+          messages: [
+            ...current.messages,
+            {
+              id: `temp-user-${Date.now()}`,
+              role: "user" as const,
+              author: "Founder",
+              module: commandModule,
+              content: message,
+              created_at: new Date().toISOString(),
+            },
+            response.reply,
+          ],
           task_runs: [response.task_run, ...current.task_runs.filter((task) => task.id !== response.task_run.id)],
           artifacts: [
             response.artifact,
@@ -719,7 +659,17 @@ function App() {
   };
 
   const handleLaunchCard = (module: ModuleKey, prompt: string) => {
-    focusModule(module);
+    if (module === "artifacts") {
+      setActiveSurface("artifacts");
+    } else if (module === "team") {
+      setActiveSurface("workspace");
+      setWorkspacePanel("team");
+    } else if (module === "capital") {
+      setActiveSurface("capital");
+    } else {
+      setActiveSurface("command");
+      setCommandModule(module);
+    }
     setComposerDraft(prompt);
   };
 
@@ -730,15 +680,14 @@ function App() {
     try {
       setIsSavingArtifact(true);
       const artifact = await saveArtifact(selectedArtifact.id, artifactDraft);
-      setData((current) => {
-        if (!current) {
-          return current;
-        }
-        return {
-          ...current,
-          artifacts: current.artifacts.map((item) => (item.id === artifact.id ? artifact : item)),
-        };
-      });
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              artifacts: current.artifacts.map((item) => (item.id === artifact.id ? artifact : item)),
+            }
+          : current,
+      );
       setActionNotice(`Saved ${artifact.title}`);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Unable to save artifact");
@@ -755,17 +704,16 @@ function App() {
     try {
       setIsDecidingApproval(true);
       const response = await decideApproval(task.id, decision);
-      setData((current) => {
-        if (!current) {
-          return current;
-        }
-        return {
-          ...current,
-          task_runs: current.task_runs.map((item) =>
-            item.id === response.task_run.id ? response.task_run : item,
-          ),
-        };
-      });
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              task_runs: current.task_runs.map((item) =>
+                item.id === response.task_run.id ? response.task_run : item,
+              ),
+            }
+          : current,
+      );
       setActionNotice(response.message);
     } catch (approvalError) {
       setError(
@@ -1033,6 +981,927 @@ function App() {
     }
   };
 
+  const renderWorkbenchPanel = () => {
+    if (!data) {
+      return null;
+    }
+
+    if (activeSurface === "artifacts") {
+      return (
+        <div className="split-panel">
+          <article className="surface-card split-sidebar compact-list">
+            <div className="artifact-list">
+              {data.artifacts.map((artifact) => (
+                <button
+                  key={artifact.id}
+                  className={`artifact-list-item ${selectedArtifactId === artifact.id ? "selected" : ""}`}
+                  onClick={() => {
+                    setSelectedArtifactId(artifact.id);
+                    setArtifactDraft(artifact.content);
+                  }}
+                  type="button"
+                >
+                  <strong>{artifact.title}</strong>
+                  <span>{artifact.summary}</span>
+                </button>
+              ))}
+            </div>
+          </article>
+
+          <article className="surface-card split-main">
+            <div className="panel-header">
+              <div>
+                <p className="section-kicker">Active artifact</p>
+                <h3>{selectedArtifact?.title ?? "Select an artifact"}</h3>
+              </div>
+              <div className="segmented-control">
+                <button
+                  className={artifactView === "preview" ? "active" : ""}
+                  onClick={() => setArtifactView("preview")}
+                  type="button"
+                >
+                  Preview
+                </button>
+                <button
+                  className={artifactView === "edit" ? "active" : ""}
+                  onClick={() => setArtifactView("edit")}
+                  type="button"
+                >
+                  Edit
+                </button>
+              </div>
+            </div>
+            {artifactView === "preview" ? (
+              <div className="artifact-preview prose-surface">
+                {selectedArtifact ? (
+                  <MarkdownRenderer content={selectedArtifact.content} />
+                ) : (
+                  <p>Select an artifact to review it.</p>
+                )}
+              </div>
+            ) : (
+              <textarea
+                className="artifact-editor"
+                rows={18}
+                value={artifactDraft}
+                onChange={(event) => setArtifactDraft(event.target.value)}
+              />
+            )}
+            <div className="button-row">
+              <button
+                className="primary-action"
+                disabled={isSavingArtifact || !selectedArtifact}
+                onClick={() => void handleSaveArtifact()}
+                type="button"
+              >
+                {isSavingArtifact ? "Saving..." : "Save artifact"}
+              </button>
+              <button
+                className="ghost-action"
+                disabled={isPublishingRoom || !selectedArtifact}
+                onClick={() => void handlePublishInvestorRoom()}
+                type="button"
+              >
+                {isPublishingRoom ? "Publishing..." : "Publish to investor room"}
+              </button>
+            </div>
+          </article>
+        </div>
+      );
+    }
+
+    if (activeSurface === "apps") {
+      return (
+        <>
+          <div className="panel-header">
+            <div>
+              <p className="section-kicker">Apps</p>
+              <h3>Run focused workflows without leaving the workspace</h3>
+            </div>
+            <div className="segmented-control">
+              <button
+                className={appSurface === "library" ? "active" : ""}
+                onClick={() => setAppSurface("library")}
+                type="button"
+              >
+                Library
+              </button>
+              <button
+                className={appSurface === "run" ? "active" : ""}
+                onClick={() => setAppSurface("run")}
+                type="button"
+              >
+                Run view
+              </button>
+            </div>
+          </div>
+
+          {appSurface === "library" ? (
+            <>
+              <div className="command-focus-row">
+                {appCategories.map((category) => (
+                  <button
+                    key={category}
+                    className={`prompt-chip ${appCategoryFilter === category ? "active-chip" : ""}`}
+                    onClick={() => setAppCategoryFilter(category)}
+                    type="button"
+                  >
+                    {category === "all" ? "All" : categoryLabel(category)}
+                  </button>
+                ))}
+              </div>
+              <div className="card-grid card-grid-three">
+                {filteredApps.map((app) => (
+                  <article key={app.id} className="surface-card action-card compact-card">
+                    <p className="card-tag">{categoryLabel(app.category)}</p>
+                    <h3>{app.title}</h3>
+                    <p>{app.summary}</p>
+                    <div className="tag-strip">
+                      {app.skill_ids.map((skillId) => (
+                        <span key={skillId} className="tag-chip">
+                          {data.skills.find((skill) => skill.id === skillId)?.name ?? skillId}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="button-row">
+                      <button
+                        className="primary-action"
+                        onClick={() => {
+                          setSelectedAppId(app.id);
+                          setAppSurface("run");
+                        }}
+                        type="button"
+                      >
+                        Open app
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="split-panel">
+              <article className="surface-card split-sidebar">
+                <div className="panel-header">
+                  <div>
+                    <p className="section-kicker">App run</p>
+                    <h3>{selectedApp?.title ?? "Select an app"}</h3>
+                  </div>
+                  {selectedAppRun ? <span className="status-pill success">{selectedAppRun.status}</span> : null}
+                </div>
+                <p>{selectedApp?.summary ?? "Choose an app from the library to begin."}</p>
+                <div className="tag-strip">
+                  {selectedAppSkills.map((skill) => (
+                    <span key={skill.id} className="tag-chip">
+                      {skill.name}
+                    </span>
+                  ))}
+                </div>
+                <label className="field field-full">
+                  <span>Run prompt</span>
+                  <textarea
+                    className="composer-input"
+                    rows={7}
+                    value={composerDraft}
+                    onChange={(event) => setComposerDraft(event.target.value)}
+                    placeholder="Describe what this app should do with the current workspace context."
+                  />
+                </label>
+                <div className="button-row">
+                  <button
+                    className="primary-action"
+                    disabled={isLaunchingApp || !selectedApp}
+                    onClick={() => void handleLaunchApp()}
+                    type="button"
+                  >
+                    {isLaunchingApp ? "Launching..." : "Run app"}
+                  </button>
+                </div>
+              </article>
+
+              <article className="surface-card split-main">
+                <div className="panel-header">
+                  <div>
+                    <p className="section-kicker">Output</p>
+                    <h3>{selectedArtifact?.title ?? "App outputs appear here"}</h3>
+                  </div>
+                </div>
+                <div className="artifact-preview prose-surface">
+                  {selectedArtifact ? (
+                    <MarkdownRenderer content={selectedArtifact.content} />
+                  ) : (
+                    <p>Run an app to create a linked artifact and execution trace.</p>
+                  )}
+                </div>
+                <div className="button-row">
+                  <button
+                    className="primary-action"
+                    disabled={isSavingArtifact || !selectedArtifact}
+                    onClick={() => void handleSaveArtifact()}
+                    type="button"
+                  >
+                    {isSavingArtifact ? "Saving..." : "Save to artifacts"}
+                  </button>
+                  <button
+                    className="ghost-action"
+                    disabled={isPublishingRoom || !selectedArtifact}
+                    onClick={() => void handlePublishInvestorRoom()}
+                    type="button"
+                  >
+                    {isPublishingRoom ? "Publishing..." : "Publish to investor room"}
+                  </button>
+                </div>
+              </article>
+            </div>
+          )}
+        </>
+      );
+    }
+
+    if (activeSurface === "capital") {
+      return (
+        <>
+          <div className="panel-header">
+            <div>
+              <p className="section-kicker">Capital</p>
+              <h3>Investor pipeline and investor room</h3>
+            </div>
+            <div className="segmented-control">
+              <button
+                className={capitalSurface === "workspace" ? "active" : ""}
+                onClick={() => setCapitalSurface("workspace")}
+                type="button"
+              >
+                Pipeline
+              </button>
+              <button
+                className={capitalSurface === "investor-room" ? "active" : ""}
+                onClick={() => setCapitalSurface("investor-room")}
+                type="button"
+              >
+                Investor room
+              </button>
+            </div>
+          </div>
+
+          {capitalSurface === "workspace" ? (
+            <div className="two-column">
+              <article className="surface-card">
+                <h4>{data.fundraise_pipeline.round_name}</h4>
+                <p>{data.fundraise_pipeline.narrative}</p>
+                <div className="list-stack compact-list">
+                  {data.fundraise_pipeline.investors.map((investor) => (
+                    <div key={investor.id} className="surface-card inset-card">
+                      <strong>{investor.name}</strong>
+                      <p>{investor.thesis}</p>
+                      <div className="surface-inline-editor">
+                        <label className="field">
+                          <span>Relationship</span>
+                          <input
+                            value={investorDrafts[investor.id]?.relationship_status ?? investor.relationship_status}
+                            onChange={(event) =>
+                              setInvestorDrafts((current) => ({
+                                ...current,
+                                [investor.id]: {
+                                  relationship_status: event.target.value,
+                                  next_step: current[investor.id]?.next_step ?? investor.next_step,
+                                },
+                              }))
+                            }
+                          />
+                        </label>
+                        <label className="field field-full">
+                          <span>Next step</span>
+                          <input
+                            value={investorDrafts[investor.id]?.next_step ?? investor.next_step}
+                            onChange={(event) =>
+                              setInvestorDrafts((current) => ({
+                                ...current,
+                                [investor.id]: {
+                                  relationship_status:
+                                    current[investor.id]?.relationship_status ?? investor.relationship_status,
+                                  next_step: event.target.value,
+                                },
+                              }))
+                            }
+                          />
+                        </label>
+                        <div className="button-row inline-editor-actions">
+                          <button
+                            className="ghost-action"
+                            disabled={isSubmittingPanel}
+                            onClick={() => void handleInvestorUpdate(investor.id)}
+                            type="button"
+                          >
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </article>
+
+              <article className="surface-card">
+                <div className="form-grid">
+                  <label className="field">
+                    <span>Investor</span>
+                    <input
+                      value={investorForm.name}
+                      onChange={(event) =>
+                        setInvestorForm((current) => ({ ...current, name: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Stage fit</span>
+                    <input
+                      value={investorForm.stage_fit}
+                      onChange={(event) =>
+                        setInvestorForm((current) => ({ ...current, stage_fit: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="field field-full">
+                    <span>Thesis</span>
+                    <textarea
+                      rows={3}
+                      value={investorForm.thesis}
+                      onChange={(event) =>
+                        setInvestorForm((current) => ({ ...current, thesis: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="field field-full">
+                    <span>Next step</span>
+                    <input
+                      value={investorForm.next_step}
+                      onChange={(event) =>
+                        setInvestorForm((current) => ({ ...current, next_step: event.target.value }))
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="button-row">
+                  <button
+                    className="primary-action"
+                    disabled={isSubmittingPanel}
+                    onClick={() => void handleCreateInvestor()}
+                    type="button"
+                  >
+                    Add investor
+                  </button>
+                </div>
+
+                <div className="form-grid">
+                  <label className="field">
+                    <span>Relationship</span>
+                    <input
+                      value={contactForm.name}
+                      onChange={(event) =>
+                        setContactForm((current) => ({ ...current, name: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Company</span>
+                    <input
+                      value={contactForm.company}
+                      onChange={(event) =>
+                        setContactForm((current) => ({ ...current, company: event.target.value }))
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="button-row">
+                  <button
+                    className="ghost-action"
+                    disabled={isSubmittingPanel}
+                    onClick={() => void handleCreateContact()}
+                    type="button"
+                  >
+                    Add relationship
+                  </button>
+                </div>
+              </article>
+            </div>
+          ) : (
+            <div className="two-column">
+              <article className="surface-card">
+                <p className="section-kicker">Investor room</p>
+                <h4>{data.investor_room.title}</h4>
+                <p>{data.investor_room.headline}</p>
+                <div className="tag-strip">
+                  {data.investor_room.diligence_items.map((item) => (
+                    <span key={item} className="tag-chip">
+                      {item}
+                    </span>
+                  ))}
+                </div>
+                <div className="button-row">
+                  <button
+                    className="primary-action"
+                    disabled={isPublishingRoom}
+                    onClick={() => void handlePublishInvestorRoom()}
+                    type="button"
+                  >
+                    {isPublishingRoom ? "Publishing..." : "Refresh investor room"}
+                  </button>
+                </div>
+              </article>
+
+              <article className="surface-card">
+                <h4>Curated materials</h4>
+                <div className="list-stack">
+                  {capitalArtifacts.map((artifact) => (
+                    <button
+                      key={artifact.id}
+                      className="artifact-list-item"
+                      onClick={() => {
+                        setSelectedArtifactId(artifact.id);
+                        setArtifactDraft(artifact.content);
+                        setActiveSurface("artifacts");
+                      }}
+                      type="button"
+                    >
+                      <strong>{artifact.title}</strong>
+                      <span>{artifact.summary}</span>
+                    </button>
+                  ))}
+                </div>
+              </article>
+            </div>
+          )}
+        </>
+      );
+    }
+
+    if (activeSurface === "workspace") {
+      return (
+        <>
+          <div className="panel-header">
+            <div>
+              <p className="section-kicker">Workspace</p>
+              <h3>Settings, access, and knowledge</h3>
+            </div>
+            <div className="segmented-control">
+              <button
+                className={workspacePanel === "setup" ? "active" : ""}
+                onClick={() => setWorkspacePanel("setup")}
+                type="button"
+              >
+                Setup
+              </button>
+              <button
+                className={workspacePanel === "team" ? "active" : ""}
+                onClick={() => setWorkspacePanel("team")}
+                type="button"
+              >
+                Team
+              </button>
+              <button
+                className={workspacePanel === "knowledge" ? "active" : ""}
+                onClick={() => setWorkspacePanel("knowledge")}
+                type="button"
+              >
+                Knowledge
+              </button>
+            </div>
+          </div>
+
+          {workspacePanel === "setup" ? (
+            <div className="two-column">
+              <article className="surface-card">
+                <div className="form-grid">
+                  <label className="field">
+                    <span>Company</span>
+                    <input
+                      value={workspaceForm.company_name}
+                      onChange={(event) =>
+                        setWorkspaceForm((current) => ({ ...current, company_name: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Founder</span>
+                    <input
+                      value={workspaceForm.founder_name}
+                      onChange={(event) =>
+                        setWorkspaceForm((current) => ({ ...current, founder_name: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Stage</span>
+                    <input
+                      value={workspaceForm.stage}
+                      onChange={(event) =>
+                        setWorkspaceForm((current) => ({ ...current, stage: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Primary KPI</span>
+                    <input
+                      value={workspaceForm.primary_kpi}
+                      onChange={(event) =>
+                        setWorkspaceForm((current) => ({ ...current, primary_kpi: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="field field-full">
+                    <span>Mission</span>
+                    <textarea
+                      rows={3}
+                      value={workspaceForm.mission}
+                      onChange={(event) =>
+                        setWorkspaceForm((current) => ({ ...current, mission: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="field field-full">
+                    <span>Operating summary</span>
+                    <textarea
+                      rows={3}
+                      value={workspaceForm.summary}
+                      onChange={(event) =>
+                        setWorkspaceForm((current) => ({ ...current, summary: event.target.value }))
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="button-row">
+                  <button
+                    className="primary-action"
+                    disabled={isSubmittingPanel}
+                    onClick={() => void handleWorkspaceSetup()}
+                    type="button"
+                  >
+                    {isSubmittingPanel ? "Saving..." : "Update workspace"}
+                  </button>
+                </div>
+              </article>
+
+              <article className="surface-card">
+                <h4>Goals</h4>
+                <div className="list-stack compact-list">
+                  {data.goals.map((goal) => (
+                    <div key={goal.id} className="surface-card inset-card">
+                      <strong>{goal.title}</strong>
+                      <p>{goal.kpi}</p>
+                      <div className="button-row">
+                        {["Planned", "In flight", "Ready", "Complete"].map((status) => (
+                          <button
+                            key={status}
+                            className="ghost-action"
+                            disabled={isSubmittingPanel}
+                            onClick={() => void handleGoalStatusChange(goal.id, status)}
+                            type="button"
+                          >
+                            {status}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="form-grid">
+                  <label className="field field-full">
+                    <span>Goal</span>
+                    <input
+                      value={goalForm.title}
+                      onChange={(event) =>
+                        setGoalForm((current) => ({ ...current, title: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>KPI</span>
+                    <input
+                      value={goalForm.kpi}
+                      onChange={(event) =>
+                        setGoalForm((current) => ({ ...current, kpi: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Due date</span>
+                    <input
+                      value={goalForm.due_date}
+                      onChange={(event) =>
+                        setGoalForm((current) => ({ ...current, due_date: event.target.value }))
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="button-row">
+                  <button
+                    className="ghost-action"
+                    disabled={isSubmittingPanel}
+                    onClick={() => void handleCreateGoal()}
+                    type="button"
+                  >
+                    Add goal
+                  </button>
+                </div>
+              </article>
+            </div>
+          ) : null}
+
+          {workspacePanel === "team" ? (
+            <div className="two-column">
+              <article className="surface-card">
+                <div className="artifact-list">
+                  {data.agents.map((agent) => (
+                    <button
+                      key={agent.id}
+                      className={`artifact-list-item ${selectedAgentId === agent.id ? "selected" : ""}`}
+                      onClick={() => setSelectedAgentId(agent.id)}
+                      type="button"
+                    >
+                      <strong>{agent.name}</strong>
+                      <span>{agent.summary}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="form-grid">
+                  <label className="field">
+                    <span>Budget</span>
+                    <input
+                      value={agentForm.budget}
+                      onChange={(event) =>
+                        setAgentForm((current) => ({ ...current, budget: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="field field-full">
+                    <span>Permissions</span>
+                    <input
+                      value={agentForm.permissions}
+                      onChange={(event) =>
+                        setAgentForm((current) => ({ ...current, permissions: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="field field-full">
+                    <span>Escalation rule</span>
+                    <textarea
+                      rows={3}
+                      value={agentForm.escalation_rule}
+                      onChange={(event) =>
+                        setAgentForm((current) => ({ ...current, escalation_rule: event.target.value }))
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="button-row">
+                  <button
+                    className="primary-action"
+                    disabled={isSubmittingPanel}
+                    onClick={() => void handleSaveAgent()}
+                    type="button"
+                  >
+                    Save guardrails
+                  </button>
+                </div>
+              </article>
+
+              <article className="surface-card">
+                <div className="list-stack compact-list">
+                  {users.map((user) => (
+                    <div key={user.email} className="surface-card inset-card">
+                      <strong>{user.display_name}</strong>
+                      <p>{user.email}</p>
+                      <div className="surface-inline-editor">
+                        <label className="field">
+                          <span>Role</span>
+                          <input
+                            value={userDrafts[user.email]?.role ?? user.role}
+                            onChange={(event) =>
+                              setUserDrafts((current) => ({
+                                ...current,
+                                [user.email]: {
+                                  display_name: current[user.email]?.display_name ?? user.display_name,
+                                  role: event.target.value,
+                                  status: current[user.email]?.status ?? user.status,
+                                },
+                              }))
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Status</span>
+                          <input
+                            value={userDrafts[user.email]?.status ?? user.status}
+                            onChange={(event) =>
+                              setUserDrafts((current) => ({
+                                ...current,
+                                [user.email]: {
+                                  display_name: current[user.email]?.display_name ?? user.display_name,
+                                  role: current[user.email]?.role ?? user.role,
+                                  status: event.target.value,
+                                },
+                              }))
+                            }
+                          />
+                        </label>
+                        <div className="button-row inline-editor-actions">
+                          <button
+                            className="ghost-action"
+                            disabled={isSubmittingPanel}
+                            onClick={() => void handleUpdateUser(user.email)}
+                            type="button"
+                          >
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="form-grid">
+                  <label className="field">
+                    <span>Name</span>
+                    <input
+                      value={userForm.display_name}
+                      onChange={(event) =>
+                        setUserForm((current) => ({ ...current, display_name: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Role</span>
+                    <input
+                      value={userForm.role}
+                      onChange={(event) =>
+                        setUserForm((current) => ({ ...current, role: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Email</span>
+                    <input
+                      value={userForm.email}
+                      onChange={(event) =>
+                        setUserForm((current) => ({ ...current, email: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Password</span>
+                    <input
+                      type="password"
+                      value={userForm.password}
+                      onChange={(event) =>
+                        setUserForm((current) => ({ ...current, password: event.target.value }))
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="button-row">
+                  <button
+                    className="ghost-action"
+                    disabled={isSubmittingPanel}
+                    onClick={() => void handleCreateUser()}
+                    type="button"
+                  >
+                    Add user
+                  </button>
+                </div>
+              </article>
+            </div>
+          ) : null}
+
+          {workspacePanel === "knowledge" ? (
+            <div className="two-column">
+              <article className="surface-card">
+                <div className="list-stack compact-list">
+                  {data.knowledge_sources.map((source) => (
+                    <div key={source.id} className="list-row">
+                      <div>
+                        <strong>{source.title}</strong>
+                        <p>
+                          {source.source_type} · {source.status} · {source.freshness}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="form-grid">
+                  <label className="field">
+                    <span>Source title</span>
+                    <input
+                      value={knowledgeForm.title}
+                      onChange={(event) =>
+                        setKnowledgeForm((current) => ({ ...current, title: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Type</span>
+                    <input
+                      value={knowledgeForm.source_type}
+                      onChange={(event) =>
+                        setKnowledgeForm((current) => ({ ...current, source_type: event.target.value }))
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="button-row">
+                  <button
+                    className="ghost-action"
+                    disabled={isSubmittingPanel}
+                    onClick={() => void handleAddKnowledgeSource()}
+                    type="button"
+                  >
+                    Add knowledge source
+                  </button>
+                </div>
+              </article>
+
+              <article className="surface-card">
+                <div className="form-grid">
+                  <label className="field field-full">
+                    <span>Title</span>
+                    <input
+                      value={uploadTitle}
+                      onChange={(event) => setUploadTitle(event.target.value)}
+                    />
+                  </label>
+                  <label className="field field-full">
+                    <span>Document</span>
+                    <input
+                      type="file"
+                      onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)}
+                    />
+                  </label>
+                </div>
+                <div className="button-row">
+                  <button
+                    className="primary-action"
+                    disabled={isUploading || !uploadFile}
+                    onClick={() => void handleUploadDocument()}
+                    type="button"
+                  >
+                    {isUploading ? "Uploading..." : "Upload document"}
+                  </button>
+                </div>
+                <div className="list-stack compact-list">
+                  {uploads.slice(0, 5).map((upload) => (
+                    <div key={upload.id} className="list-row">
+                      <div>
+                        <strong>{upload.filename}</strong>
+                        <p>
+                          {upload.storage_backend} · {formatTimestamp(upload.created_at)}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            </div>
+          ) : null}
+        </>
+      );
+    }
+
+    return (
+      <div className="linked-tools-grid">
+        <article className="surface-card inset-card">
+          <p className="section-kicker">Active artifact</p>
+          <h4>{selectedArtifact?.title ?? "No artifact yet"}</h4>
+          <p>{selectedArtifact?.summary ?? "The first durable output from this thread will appear here."}</p>
+          <button className="inline-link" onClick={() => setActiveSurface("artifacts")} type="button">
+            Open artifacts
+          </button>
+        </article>
+        <article className="surface-card inset-card">
+          <p className="section-kicker">Suggested app</p>
+          <h4>{launchedApp?.title ?? selectedApp?.title ?? "No app selected"}</h4>
+          <p>{launchedApp?.summary ?? selectedApp?.summary ?? "When a richer workflow is needed, launch it from here."}</p>
+          <button
+            className="inline-link"
+            onClick={() => {
+              setActiveSurface("apps");
+              setAppSurface("run");
+            }}
+            type="button"
+          >
+            Open app run
+          </button>
+        </article>
+        <article className="surface-card inset-card">
+          <p className="section-kicker">Capital state</p>
+          <h4>{data.fundraise_pipeline.round_name}</h4>
+          <p>{data.fundraise_pipeline.narrative}</p>
+          <button className="inline-link" onClick={() => setActiveSurface("capital")} type="button">
+            Open capital
+          </button>
+        </article>
+      </div>
+    );
+  };
+
   if (isLoading) {
     return <div className="app-state">Loading VXV Workspace...</div>;
   }
@@ -1043,10 +1912,7 @@ function App() {
         <section className="login-card">
           <p className="section-kicker">Founder access</p>
           <h1>Enter VXV Workspace</h1>
-          <p>
-            Sign in to load the founder operating environment, current artifacts, active runs, and
-            fundraising context.
-          </p>
+          <p>Sign in and land directly in the command workspace.</p>
           {error ? <p className="action-error">{error}</p> : null}
           <div className="form-grid">
             <label className="field field-full">
@@ -1105,17 +1971,17 @@ function App() {
             <div className="onboarding-step active">
               <small>Step 1</small>
               <strong>Founding context</strong>
-              <p>Define the company, stage, mission, and KPI the system should align around.</p>
+              <p>Set company, stage, mission, and KPI.</p>
             </div>
             <div className="onboarding-step">
               <small>Step 2</small>
               <strong>First workflows</strong>
-              <p>Decide which goals, agent roles, and knowledge sources matter first.</p>
+              <p>Pick the first goals, knowledge, and operator behaviors.</p>
             </div>
             <div className="onboarding-step">
               <small>Step 3</small>
               <strong>Enter command</strong>
-              <p>Start in one thread, then pull in artifacts, apps, and investor surfaces only when needed.</p>
+              <p>Start in one thread and pull in other surfaces only when needed.</p>
             </div>
           </div>
         </aside>
@@ -1123,10 +1989,9 @@ function App() {
         <main className="onboarding-main">
           <section className="surface-card onboarding-card">
             <p className="section-kicker">Set up your workspace</p>
-            <h1>Configure the founder operating environment before the system starts acting on your behalf.</h1>
+            <h1>Configure the founder operating environment, then land directly in command.</h1>
             <p className="section-copy">
-              The onboarding flow should be practical: define the company context, clarify what matters,
-              and then land directly in the command workspace.
+              Keep this practical. Define the company context and the system will use it to route work.
             </p>
 
             <div className="form-grid">
@@ -1215,7 +2080,7 @@ function App() {
   }
 
   return (
-    <div className="vxv-shell">
+    <div className="vxv-shell command-first-shell">
       <aside className="workspace-nav">
         <div className="brand-stack">
           <div className="brand-mark">VXV Workspace</div>
@@ -1265,9 +2130,12 @@ function App() {
       <div className="workspace-main">
         <header className="topbar">
           <div>
-            <p className="section-kicker">{surfaceMeta[activeSurface].kicker}</p>
-            <h1>{surfaceMeta[activeSurface].label}</h1>
-            <p className="section-copy">{surfaceMeta[activeSurface].description}</p>
+            <p className="section-kicker">Command workspace</p>
+            <h1>One thread should coordinate the rest of the platform.</h1>
+            <p className="section-copy">
+              Ask, route, run, store, and continue. Use the workbench only when the thread needs a
+              deeper surface.
+            </p>
             {actionNotice ? <p className="action-notice">{actionNotice}</p> : null}
             {error ? <p className="action-error">{error}</p> : null}
           </div>
@@ -1283,130 +2151,137 @@ function App() {
 
         <div className="content-layout">
           <main className="content-pane">
-            {activeSurface === "command" ? (
-              <>
-                <section className="hero-panel compact">
+            <section className="hero-panel compact">
+              <div>
+                <p className="section-kicker">Founder command loop</p>
+                <h2>Start here. Let the workspace gather context, choose tools, and keep the work connected.</h2>
+                <p>
+                  Chat is the center of the product. Apps, artifacts, capital workflows, and admin surfaces
+                  should appear only when they help the current thread move forward.
+                </p>
+              </div>
+              <div className="hero-metrics">
+                <div className="metric-card">
+                  <span>Active goals</span>
+                  <strong>{data.metrics.active_goals}</strong>
+                </div>
+                <div className="metric-card">
+                  <span>Runs in motion</span>
+                  <strong>{data.metrics.running_tasks}</strong>
+                </div>
+                <div className="metric-card">
+                  <span>Artifacts ready</span>
+                  <strong>{data.metrics.ready_artifacts}</strong>
+                </div>
+                <div className="metric-card">
+                  <span>Warm investors</span>
+                  <strong>{data.metrics.warm_investors}</strong>
+                </div>
+              </div>
+            </section>
+
+            <section className="surface-card">
+              <div className="panel-header">
+                <div>
+                  <p className="section-kicker">Command focus</p>
+                  <h3>Choose the lens for this thread</h3>
+                </div>
+              </div>
+              <div className="command-focus-row">
+                {commandFocusModules.map((module) => (
+                  <button
+                    key={module}
+                    className={`prompt-chip ${commandModule === module ? "active-chip" : ""}`}
+                    onClick={() => setCommandModule(module)}
+                    type="button"
+                  >
+                    {moduleMeta[module].label}
+                  </button>
+                ))}
+              </div>
+              <p className="surface-help">{moduleMeta[commandModule].description}</p>
+            </section>
+
+            <section className="surface-card command-thread-card">
+              <div className="panel-header">
+                <div>
+                  <p className="section-kicker">Founder thread</p>
+                  <h3>Ask once, then keep working in the same place</h3>
+                </div>
+                {activeAgent ? <span className="status-pill success">{activeAgent.name}</span> : null}
+              </div>
+
+              <div className="conversation-thread command-thread">
+                {commandMessages.map((message) => (
+                  <article
+                    key={message.id}
+                    className={`message-bubble ${message.role === "assistant" ? "assistant" : "user"}`}
+                  >
+                    <div className="message-meta">
+                      <strong>{message.author}</strong>
+                      <span>{formatTimestamp(message.created_at)}</span>
+                    </div>
+                    {message.role === "assistant" ? (
+                      <MarkdownRenderer content={message.content} />
+                    ) : (
+                      <p>{message.content}</p>
+                    )}
+                  </article>
+                ))}
+              </div>
+
+              <div className="prompt-row">
+                {defaultSuggestions[commandModule].map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    className="prompt-chip"
+                    onClick={() => void handleSendMessage(suggestion)}
+                    type="button"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+
+              <div className="composer">
+                <textarea
+                  aria-label="Founder prompt"
+                  className="composer-input"
+                  rows={5}
+                  placeholder="Ask the workspace to research, plan, coordinate, launch an app, or produce an artifact..."
+                  value={composerDraft}
+                  onChange={(event) => setComposerDraft(event.target.value)}
+                />
+                <button
+                  className="primary-action"
+                  disabled={isSending}
+                  onClick={() => {
+                    const value = composerDraft.trim();
+                    if (!value) {
+                      return;
+                    }
+                    setComposerDraft("");
+                    void handleSendMessage(value);
+                  }}
+                  type="button"
+                >
+                  {isSending ? "Sending..." : "Send to workspace"}
+                </button>
+              </div>
+            </section>
+
+            <section className="two-column">
+              <article className="surface-card">
+                <div className="panel-header">
                   <div>
-                    <p className="section-kicker">Founder command loop</p>
-                    <h2>Start in one thread. Let the workspace gather context, route work, and keep building.</h2>
-                    <p>
-                      Command is the center of gravity. You should be able to ask, see what context was used,
-                      understand what ran, and keep going without switching mental models.
-                    </p>
+                    <p className="section-kicker">Suggested flows</p>
+                    <h3>Start common founder motions quickly</h3>
                   </div>
-                  <div className="hero-metrics">
-                    <div className="metric-card">
-                      <span>Active goals</span>
-                      <strong>{data.metrics.active_goals}</strong>
-                    </div>
-                    <div className="metric-card">
-                      <span>Runs in motion</span>
-                      <strong>{data.metrics.running_tasks}</strong>
-                    </div>
-                    <div className="metric-card">
-                      <span>Artifacts ready</span>
-                      <strong>{data.metrics.ready_artifacts}</strong>
-                    </div>
-                    <div className="metric-card">
-                      <span>Warm investors</span>
-                      <strong>{data.metrics.warm_investors}</strong>
-                    </div>
-                  </div>
-                </section>
-
-                <section className="surface-card">
-                  <div className="panel-header">
-                    <div>
-                      <p className="section-kicker">Command focus</p>
-                      <h3>Choose the context for this thread</h3>
-                    </div>
-                  </div>
-                  <div className="command-focus-row">
-                    {commandFocusModules.map((module) => (
-                      <button
-                        key={module}
-                        className={`prompt-chip ${commandModule === module ? "active-chip" : ""}`}
-                        onClick={() => setCommandModule(module)}
-                        type="button"
-                      >
-                        {moduleMeta[module].label}
-                      </button>
-                    ))}
-                  </div>
-                </section>
-
-                <section className="surface-card command-thread-card">
-                  <div className="panel-header">
-                    <div>
-                      <p className="section-kicker">Founder thread</p>
-                      <h3>One conversation, many possible outcomes</h3>
-                    </div>
-                    {activeAgent ? <span className="status-pill success">{activeAgent.name}</span> : null}
-                  </div>
-
-                  <div className="conversation-thread command-thread">
-                    {commandMessages.map((message) => (
-                      <article
-                        key={message.id}
-                        className={`message-bubble ${message.role === "assistant" ? "assistant" : "user"}`}
-                      >
-                        <div className="message-meta">
-                          <strong>{message.author}</strong>
-                          <span>{formatTimestamp(message.created_at)}</span>
-                        </div>
-                        {message.role === "assistant" ? (
-                          <MarkdownRenderer content={message.content} />
-                        ) : (
-                          <p>{message.content}</p>
-                        )}
-                      </article>
-                    ))}
-                  </div>
-
-                  <div className="prompt-row">
-                    {defaultSuggestions[commandModule].map((suggestion) => (
-                      <button
-                        key={suggestion}
-                        className="prompt-chip"
-                        onClick={() => void handleSendMessage(suggestion)}
-                        type="button"
-                      >
-                        {suggestion}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="composer">
-                    <textarea
-                      aria-label="Founder prompt"
-                      className="composer-input"
-                      rows={5}
-                      placeholder="Ask the workspace to research, plan, coordinate, launch an app, or produce an artifact..."
-                      value={composerDraft}
-                      onChange={(event) => setComposerDraft(event.target.value)}
-                    />
-                    <button
-                      className="primary-action"
-                      disabled={isSending}
-                      onClick={() => {
-                        const value = composerDraft.trim();
-                        if (!value) {
-                          return;
-                        }
-                        setComposerDraft("");
-                        void handleSendMessage(value);
-                      }}
-                      type="button"
-                    >
-                      {isSending ? "Sending..." : "Send to workspace"}
-                    </button>
-                  </div>
-                </section>
-
-                <section className="card-grid card-grid-four">
+                </div>
+                <div className="card-grid card-grid-two">
                   {founderLaunchCards.map((card) => (
                     <article key={card.title} className="surface-card action-card compact-card">
-                      <p className="card-tag">Suggested flow</p>
+                      <p className="card-tag">Command shortcut</p>
                       <h3>{card.title}</h3>
                       <p>{card.body}</p>
                       <button
@@ -1418,1034 +2293,66 @@ function App() {
                       </button>
                     </article>
                   ))}
-                </section>
+                </div>
+              </article>
 
-                <section className="two-column">
-                  <article className="surface-card">
-                    <div className="panel-header">
-                      <div>
-                        <p className="section-kicker">Available workflows</p>
-                        <h3>Move from thread to structured execution</h3>
-                      </div>
-                    </div>
-                    <div className="list-stack">
-                      {data.workflows.slice(0, 4).map((workflow) => (
-                        <div key={workflow.id} className="surface-card inset-card">
-                          <strong>{workflow.title}</strong>
-                          <p>{workflow.description}</p>
-                          <div className="button-row">
-                            <button
-                              className="ghost-action"
-                              disabled={isSubmittingPanel}
-                              onClick={() => void handleLaunchWorkflow(workflow.id)}
-                              type="button"
-                            >
-                              Launch workflow
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <label className="field field-full">
-                      <span>Workflow note</span>
-                      <textarea
-                        rows={3}
-                        value={workflowNote}
-                        onChange={(event) => setWorkflowNote(event.target.value)}
-                      />
-                    </label>
-                  </article>
-
-                  <article className="surface-card">
-                    <div className="panel-header">
-                      <div>
-                        <p className="section-kicker">Suggested apps</p>
-                        <h3>Use richer workflow surfaces when needed</h3>
-                      </div>
-                    </div>
-                    <div className="list-stack">
-                      {data.apps.slice(0, 3).map((app) => (
-                        <div key={app.id} className="list-row">
-                          <div>
-                            <strong>{app.title}</strong>
-                            <p>{app.summary}</p>
-                          </div>
-                          <button
-                            className="ghost-action"
-                            onClick={() => {
-                              setSelectedAppId(app.id);
-                              setActiveSurface("apps");
-                              setAppSurface("run");
-                            }}
-                            type="button"
-                          >
-                            Open app
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </article>
-                </section>
-              </>
-            ) : null}
-
-            {activeSurface === "artifacts" ? (
-              <section className="split-panel">
-                <article className="surface-card split-sidebar">
-                  <div className="panel-header">
-                    <div>
-                      <p className="section-kicker">Artifact library</p>
-                      <h3>Workspace memory</h3>
-                    </div>
+              <article className="surface-card">
+                <div className="panel-header">
+                  <div>
+                    <p className="section-kicker">Workflow launcher</p>
+                    <h3>Move from thread to structured execution</h3>
                   </div>
-                  <div className="artifact-list">
-                    {data.artifacts.map((artifact) => (
-                      <button
-                        key={artifact.id}
-                        className={`artifact-list-item ${selectedArtifactId === artifact.id ? "selected" : ""}`}
-                        onClick={() => {
-                          setSelectedArtifactId(artifact.id);
-                          setArtifactDraft(artifact.content);
-                        }}
-                        type="button"
-                      >
-                        <strong>{artifact.title}</strong>
-                        <span>{artifact.summary}</span>
-                      </button>
-                    ))}
-                  </div>
-                </article>
-
-                <article className="surface-card split-main">
-                  <div className="panel-header">
-                    <div>
-                      <p className="section-kicker">Artifact detail</p>
-                      <h3>{selectedArtifact?.title ?? "Select an artifact"}</h3>
-                    </div>
-                    <div className="segmented-control">
-                      <button
-                        className={artifactView === "preview" ? "active" : ""}
-                        onClick={() => setArtifactView("preview")}
-                        type="button"
-                      >
-                        Preview
-                      </button>
-                      <button
-                        className={artifactView === "edit" ? "active" : ""}
-                        onClick={() => setArtifactView("edit")}
-                        type="button"
-                      >
-                        Edit
-                      </button>
-                    </div>
-                  </div>
-
-                  {artifactView === "preview" ? (
-                    <div className="artifact-preview prose-surface">
-                      {selectedArtifact ? (
-                        <MarkdownRenderer content={selectedArtifact.content} />
-                      ) : (
-                        <p>Select an artifact to review it.</p>
-                      )}
-                    </div>
-                  ) : (
-                    <textarea
-                      className="artifact-editor"
-                      rows={22}
-                      value={artifactDraft}
-                      onChange={(event) => setArtifactDraft(event.target.value)}
-                    />
-                  )}
-
-                  <div className="button-row">
-                    <button
-                      className="primary-action"
-                      disabled={isSavingArtifact || !selectedArtifact}
-                      onClick={() => void handleSaveArtifact()}
-                      type="button"
-                    >
-                      {isSavingArtifact ? "Saving..." : "Save artifact"}
-                    </button>
-                    <button
-                      className="ghost-action"
-                      disabled={isPublishingRoom || !selectedArtifact}
-                      onClick={() => void handlePublishInvestorRoom()}
-                      type="button"
-                    >
-                      {isPublishingRoom ? "Publishing..." : "Publish to investor room"}
-                    </button>
-                  </div>
-                </article>
-              </section>
-            ) : null}
-
-            {activeSurface === "apps" ? (
-              <>
-                <section className="surface-card">
-                  <div className="panel-header">
-                    <div>
-                      <p className="section-kicker">Workspace apps</p>
-                      <h3>Launch focused workflow tools inside the OS</h3>
-                    </div>
-                    <div className="segmented-control">
-                      <button
-                        className={appSurface === "library" ? "active" : ""}
-                        onClick={() => setAppSurface("library")}
-                        type="button"
-                      >
-                        Library
-                      </button>
-                      <button
-                        className={appSurface === "run" ? "active" : ""}
-                        onClick={() => setAppSurface("run")}
-                        type="button"
-                      >
-                        Run view
-                      </button>
-                    </div>
-                  </div>
-                  <div className="command-focus-row">
-                    {appCategories.map((category) => (
-                      <button
-                        key={category}
-                        className={`prompt-chip ${appCategoryFilter === category ? "active-chip" : ""}`}
-                        onClick={() => setAppCategoryFilter(category)}
-                        type="button"
-                      >
-                        {category === "all" ? "All" : categoryLabel(category)}
-                      </button>
-                    ))}
-                  </div>
-                </section>
-
-                {appSurface === "library" ? (
-                  <section className="card-grid card-grid-three">
-                    {filteredApps.map((app) => (
-                      <article key={app.id} className="surface-card action-card compact-card">
-                        <p className="card-tag">{categoryLabel(app.category)}</p>
-                        <h3>{app.title}</h3>
-                        <p>{app.summary}</p>
-                        <div className="tag-strip">
-                          {app.skill_ids.map((skillId) => (
-                            <span key={skillId} className="tag-chip">
-                              {data.skills.find((skill) => skill.id === skillId)?.name ?? skillId}
-                            </span>
-                          ))}
-                        </div>
-                        <div className="button-row">
-                          <button
-                            className="primary-action"
-                            onClick={() => {
-                              setSelectedAppId(app.id);
-                              setAppSurface("run");
-                            }}
-                            type="button"
-                          >
-                            Open app
-                          </button>
-                        </div>
-                      </article>
-                    ))}
-                  </section>
-                ) : (
-                  <section className="split-panel">
-                    <article className="surface-card split-sidebar">
-                      <div className="panel-header">
-                        <div>
-                          <p className="section-kicker">App run</p>
-                          <h3>{selectedApp?.title ?? "Select an app"}</h3>
-                        </div>
-                        {selectedAppRun ? (
-                          <span className="status-pill success">{selectedAppRun.status}</span>
-                        ) : null}
-                      </div>
-                      <p>{selectedApp?.summary ?? "Choose an app from the library to begin."}</p>
-                      <div className="tag-strip">
-                        {selectedAppSkills.map((skill) => (
-                          <span key={skill.id} className="tag-chip">
-                            {skill.name}
-                          </span>
-                        ))}
-                      </div>
-                      <label className="field field-full">
-                        <span>Run prompt</span>
-                        <textarea
-                          className="composer-input"
-                          rows={8}
-                          value={composerDraft}
-                          onChange={(event) => setComposerDraft(event.target.value)}
-                          placeholder="Describe what this app should do with the current workspace context."
-                        />
-                      </label>
-                      <div className="button-row">
-                        <button
-                          className="primary-action"
-                          disabled={isLaunchingApp || !selectedApp}
-                          onClick={() => void handleLaunchApp()}
-                          type="button"
-                        >
-                          {isLaunchingApp ? "Launching..." : "Run app"}
-                        </button>
-                      </div>
-                    </article>
-
-                    <article className="surface-card split-main">
-                      <div className="panel-header">
-                        <div>
-                          <p className="section-kicker">Artifact preview</p>
-                          <h3>{selectedArtifact?.title ?? "App artifacts appear here"}</h3>
-                        </div>
-                      </div>
-                      <div className="artifact-preview prose-surface">
-                        {selectedArtifact ? (
-                          <MarkdownRenderer content={selectedArtifact.content} />
-                        ) : (
-                          <p>Run an app to create a linked artifact and execution trace.</p>
-                        )}
-                      </div>
-                      <div className="button-row">
-                        <button
-                          className="primary-action"
-                          disabled={isSavingArtifact || !selectedArtifact}
-                          onClick={() => void handleSaveArtifact()}
-                          type="button"
-                        >
-                          {isSavingArtifact ? "Saving..." : "Save to artifacts"}
-                        </button>
-                        <button className="ghost-action" type="button">
-                          Share with team
-                        </button>
-                        <button
-                          className="ghost-action"
-                          disabled={isPublishingRoom || !selectedArtifact}
-                          onClick={() => void handlePublishInvestorRoom()}
-                          type="button"
-                        >
-                          {isPublishingRoom ? "Publishing..." : "Publish to investor room"}
-                        </button>
-                      </div>
-                    </article>
-                  </section>
-                )}
-              </>
-            ) : null}
-
-            {activeSurface === "capital" ? (
-              <>
-                <section className="surface-card">
-                  <div className="panel-header">
-                    <div>
-                      <p className="section-kicker">Fundraising workspace</p>
-                      <h3>Move between pipeline management and investor-facing output</h3>
-                    </div>
-                    <div className="segmented-control">
-                      <button
-                        className={capitalSurface === "workspace" ? "active" : ""}
-                        onClick={() => setCapitalSurface("workspace")}
-                        type="button"
-                      >
-                        Pipeline
-                      </button>
-                      <button
-                        className={capitalSurface === "investor-room" ? "active" : ""}
-                        onClick={() => setCapitalSurface("investor-room")}
-                        type="button"
-                      >
-                        Investor room
-                      </button>
-                    </div>
-                  </div>
-                </section>
-
-                {capitalSurface === "workspace" ? (
-                  <section className="two-column">
-                    <article className="surface-card">
-                      <div className="panel-header">
-                        <div>
-                          <p className="section-kicker">Investor pipeline</p>
-                          <h3>{data.fundraise_pipeline.round_name}</h3>
-                        </div>
-                      </div>
-                      <p>{data.fundraise_pipeline.narrative}</p>
-                      <div className="list-stack">
-                        {data.fundraise_pipeline.investors.map((investor) => (
-                          <div key={investor.id} className="surface-card inset-card">
-                            <strong>{investor.name}</strong>
-                            <p>{investor.thesis}</p>
-                            <div className="form-grid">
-                              <label className="field">
-                                <span>Status</span>
-                                <input
-                                  value={investorDrafts[investor.id]?.relationship_status ?? investor.relationship_status}
-                                  onChange={(event) =>
-                                    setInvestorDrafts((current) => ({
-                                      ...current,
-                                      [investor.id]: {
-                                        relationship_status: event.target.value,
-                                        next_step: current[investor.id]?.next_step ?? investor.next_step,
-                                      },
-                                    }))
-                                  }
-                                />
-                              </label>
-                              <label className="field field-full">
-                                <span>Next step</span>
-                                <input
-                                  value={investorDrafts[investor.id]?.next_step ?? investor.next_step}
-                                  onChange={(event) =>
-                                    setInvestorDrafts((current) => ({
-                                      ...current,
-                                      [investor.id]: {
-                                        relationship_status:
-                                          current[investor.id]?.relationship_status ?? investor.relationship_status,
-                                        next_step: event.target.value,
-                                      },
-                                    }))
-                                  }
-                                />
-                              </label>
-                            </div>
-                            <div className="button-row">
-                              <button
-                                className="ghost-action"
-                                disabled={isSubmittingPanel}
-                                onClick={() => void handleInvestorUpdate(investor.id)}
-                                type="button"
-                              >
-                                Save investor update
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </article>
-
-                    <article className="surface-card">
-                      <div className="panel-header">
-                        <div>
-                          <p className="section-kicker">Add to pipeline</p>
-                          <h3>Investors and relationships</h3>
-                        </div>
-                      </div>
-                      <div className="form-grid">
-                        <label className="field">
-                          <span>Investor</span>
-                          <input
-                            value={investorForm.name}
-                            onChange={(event) =>
-                              setInvestorForm((current) => ({ ...current, name: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <label className="field">
-                          <span>Stage fit</span>
-                          <input
-                            value={investorForm.stage_fit}
-                            onChange={(event) =>
-                              setInvestorForm((current) => ({ ...current, stage_fit: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <label className="field field-full">
-                          <span>Thesis</span>
-                          <textarea
-                            rows={3}
-                            value={investorForm.thesis}
-                            onChange={(event) =>
-                              setInvestorForm((current) => ({ ...current, thesis: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <label className="field field-full">
-                          <span>Next step</span>
-                          <input
-                            value={investorForm.next_step}
-                            onChange={(event) =>
-                              setInvestorForm((current) => ({ ...current, next_step: event.target.value }))
-                            }
-                          />
-                        </label>
-                      </div>
-                      <div className="button-row">
-                        <button
-                          className="primary-action"
-                          disabled={isSubmittingPanel}
-                          onClick={() => void handleCreateInvestor()}
-                          type="button"
-                        >
-                          Add investor
-                        </button>
-                        <button
-                          className="ghost-action"
-                          disabled={isPublishingRoom}
-                          onClick={() => void handlePublishInvestorRoom()}
-                          type="button"
-                        >
-                          {isPublishingRoom ? "Publishing..." : "Publish investor room"}
-                        </button>
-                      </div>
-
-                      <div className="panel-header panel-header-spaced">
-                        <div>
-                          <p className="section-kicker">Relationships</p>
-                          <h3>People around the round</h3>
-                        </div>
-                      </div>
-                      <div className="form-grid">
-                        <label className="field">
-                          <span>Name</span>
-                          <input
-                            value={contactForm.name}
-                            onChange={(event) =>
-                              setContactForm((current) => ({ ...current, name: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <label className="field">
-                          <span>Category</span>
-                          <input
-                            value={contactForm.category}
-                            onChange={(event) =>
-                              setContactForm((current) => ({ ...current, category: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <label className="field">
-                          <span>Company</span>
-                          <input
-                            value={contactForm.company}
-                            onChange={(event) =>
-                              setContactForm((current) => ({ ...current, company: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <label className="field">
-                          <span>Stage</span>
-                          <input
-                            value={contactForm.relationship_stage}
-                            onChange={(event) =>
-                              setContactForm((current) => ({
-                                ...current,
-                                relationship_stage: event.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-                      </div>
+                </div>
+                <div className="list-stack compact-list">
+                  {data.workflows.slice(0, 4).map((workflow) => (
+                    <div key={workflow.id} className="surface-card inset-card">
+                      <strong>{workflow.title}</strong>
+                      <p>{workflow.description}</p>
                       <div className="button-row">
                         <button
                           className="ghost-action"
                           disabled={isSubmittingPanel}
-                          onClick={() => void handleCreateContact()}
+                          onClick={() => void handleLaunchWorkflow(workflow.id)}
                           type="button"
                         >
-                          Add relationship
+                          Launch workflow
                         </button>
-                      </div>
-                    </article>
-                  </section>
-                ) : (
-                  <section className="surface-card investor-room-card">
-                    <div className="panel-header">
-                      <div>
-                        <p className="section-kicker">Investor room</p>
-                        <h3>{data.investor_room.title}</h3>
                       </div>
                     </div>
-                    <p>{data.investor_room.headline}</p>
-                    <div className="two-column">
-                      <article className="surface-card inset-card">
-                        <p className="section-kicker">Curated materials</p>
-                        <div className="list-stack">
-                          {capitalArtifacts.map((artifact) => (
-                            <div key={artifact.id} className="list-row">
-                              <div>
-                                <strong>{artifact.title}</strong>
-                                <p>{artifact.summary}</p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </article>
-                      <article className="surface-card inset-card">
-                        <p className="section-kicker">Diligence checklist</p>
-                        <div className="list-stack">
-                          {data.investor_room.diligence_items.map((item) => (
-                            <div key={item} className="list-row">
-                              <strong>{item}</strong>
-                            </div>
-                          ))}
-                        </div>
-                      </article>
-                    </div>
-                  </section>
-                )}
-              </>
-            ) : null}
+                  ))}
+                </div>
+                <label className="field field-full">
+                  <span>Workflow note</span>
+                  <textarea
+                    rows={3}
+                    value={workflowNote}
+                    onChange={(event) => setWorkflowNote(event.target.value)}
+                  />
+                </label>
+              </article>
+            </section>
 
-            {activeSurface === "workspace" ? (
-              <>
-                <section className="surface-card">
-                  <div className="panel-header">
-                    <div>
-                      <p className="section-kicker">Workspace systems</p>
-                      <h3>Keep admin and setup behind the operating layer, not in front of it</h3>
-                    </div>
-                    <div className="segmented-control">
-                      <button
-                        className={workspacePanel === "setup" ? "active" : ""}
-                        onClick={() => setWorkspacePanel("setup")}
-                        type="button"
-                      >
-                        Setup
-                      </button>
-                      <button
-                        className={workspacePanel === "team" ? "active" : ""}
-                        onClick={() => setWorkspacePanel("team")}
-                        type="button"
-                      >
-                        Team
-                      </button>
-                      <button
-                        className={workspacePanel === "knowledge" ? "active" : ""}
-                        onClick={() => setWorkspacePanel("knowledge")}
-                        type="button"
-                      >
-                        Knowledge
-                      </button>
-                    </div>
-                  </div>
-                </section>
-
-                {workspacePanel === "setup" ? (
-                  <section className="two-column">
-                    <article className="surface-card">
-                      <div className="panel-header">
-                        <div>
-                          <p className="section-kicker">Company context</p>
-                          <h3>Workspace setup</h3>
-                        </div>
-                      </div>
-                      <div className="form-grid">
-                        <label className="field">
-                          <span>Company</span>
-                          <input
-                            value={workspaceForm.company_name}
-                            onChange={(event) =>
-                              setWorkspaceForm((current) => ({ ...current, company_name: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <label className="field">
-                          <span>Founder</span>
-                          <input
-                            value={workspaceForm.founder_name}
-                            onChange={(event) =>
-                              setWorkspaceForm((current) => ({ ...current, founder_name: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <label className="field">
-                          <span>Stage</span>
-                          <input
-                            value={workspaceForm.stage}
-                            onChange={(event) =>
-                              setWorkspaceForm((current) => ({ ...current, stage: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <label className="field">
-                          <span>Primary KPI</span>
-                          <input
-                            value={workspaceForm.primary_kpi}
-                            onChange={(event) =>
-                              setWorkspaceForm((current) => ({ ...current, primary_kpi: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <label className="field field-full">
-                          <span>Mission</span>
-                          <textarea
-                            rows={3}
-                            value={workspaceForm.mission}
-                            onChange={(event) =>
-                              setWorkspaceForm((current) => ({ ...current, mission: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <label className="field field-full">
-                          <span>Summary</span>
-                          <textarea
-                            rows={3}
-                            value={workspaceForm.summary}
-                            onChange={(event) =>
-                              setWorkspaceForm((current) => ({ ...current, summary: event.target.value }))
-                            }
-                          />
-                        </label>
-                      </div>
-                      <div className="button-row">
-                        <button
-                          className="primary-action"
-                          disabled={isSubmittingPanel}
-                          onClick={() => void handleWorkspaceSetup()}
-                          type="button"
-                        >
-                          {isSubmittingPanel ? "Saving..." : "Update workspace"}
-                        </button>
-                      </div>
-                    </article>
-
-                    <article className="surface-card">
-                      <div className="panel-header">
-                        <div>
-                          <p className="section-kicker">Strategic goals</p>
-                          <h3>What the system should optimize for</h3>
-                        </div>
-                      </div>
-                      <div className="list-stack">
-                        {data.goals.map((goal) => (
-                          <div key={goal.id} className="surface-card inset-card">
-                            <strong>{goal.title}</strong>
-                            <p>{goal.kpi}</p>
-                            <div className="button-row">
-                              {["Planned", "In flight", "Ready", "Complete"].map((status) => (
-                                <button
-                                  key={status}
-                                  className="ghost-action"
-                                  disabled={isSubmittingPanel}
-                                  onClick={() => void handleGoalStatusChange(goal.id, status)}
-                                  type="button"
-                                >
-                                  {status}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="form-grid">
-                        <label className="field field-full">
-                          <span>Goal</span>
-                          <input
-                            value={goalForm.title}
-                            onChange={(event) =>
-                              setGoalForm((current) => ({ ...current, title: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <label className="field">
-                          <span>KPI</span>
-                          <input
-                            value={goalForm.kpi}
-                            onChange={(event) =>
-                              setGoalForm((current) => ({ ...current, kpi: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <label className="field">
-                          <span>Due date</span>
-                          <input
-                            value={goalForm.due_date}
-                            onChange={(event) =>
-                              setGoalForm((current) => ({ ...current, due_date: event.target.value }))
-                            }
-                          />
-                        </label>
-                      </div>
-                      <div className="button-row">
-                        <button
-                          className="ghost-action"
-                          disabled={isSubmittingPanel}
-                          onClick={() => void handleCreateGoal()}
-                          type="button"
-                        >
-                          Add goal
-                        </button>
-                      </div>
-                    </article>
-                  </section>
-                ) : null}
-
-                {workspacePanel === "team" ? (
-                  <section className="two-column">
-                    <article className="surface-card">
-                      <div className="panel-header">
-                        <div>
-                          <p className="section-kicker">AI team</p>
-                          <h3>Guardrails and operating rules</h3>
-                        </div>
-                      </div>
-                      <div className="artifact-list">
-                        {data.agents.map((agent) => (
-                          <button
-                            key={agent.id}
-                            className={`artifact-list-item ${selectedAgentId === agent.id ? "selected" : ""}`}
-                            onClick={() => setSelectedAgentId(agent.id)}
-                            type="button"
-                          >
-                            <strong>{agent.name}</strong>
-                            <span>{agent.summary}</span>
-                          </button>
-                        ))}
-                      </div>
-                      <div className="form-grid">
-                        <label className="field">
-                          <span>Budget</span>
-                          <input
-                            value={agentForm.budget}
-                            onChange={(event) =>
-                              setAgentForm((current) => ({ ...current, budget: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <label className="field field-full">
-                          <span>Permissions</span>
-                          <input
-                            value={agentForm.permissions}
-                            onChange={(event) =>
-                              setAgentForm((current) => ({ ...current, permissions: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <label className="field field-full">
-                          <span>Escalation rule</span>
-                          <textarea
-                            rows={3}
-                            value={agentForm.escalation_rule}
-                            onChange={(event) =>
-                              setAgentForm((current) => ({
-                                ...current,
-                                escalation_rule: event.target.value,
-                              }))
-                            }
-                          />
-                        </label>
-                      </div>
-                      <div className="button-row">
-                        <button
-                          className="primary-action"
-                          disabled={isSubmittingPanel}
-                          onClick={() => void handleSaveAgent()}
-                          type="button"
-                        >
-                          Save guardrails
-                        </button>
-                      </div>
-                    </article>
-
-                    <article className="surface-card">
-                      <div className="panel-header">
-                        <div>
-                          <p className="section-kicker">Workspace users</p>
-                          <h3>Access and roles</h3>
-                        </div>
-                      </div>
-                      <div className="list-stack">
-                        {users.map((user) => (
-                          <div key={user.email} className="surface-card inset-card">
-                            <strong>{user.display_name}</strong>
-                            <p>{user.email}</p>
-                            <div className="form-grid">
-                              <label className="field">
-                                <span>Role</span>
-                                <input
-                                  value={userDrafts[user.email]?.role ?? user.role}
-                                  onChange={(event) =>
-                                    setUserDrafts((current) => ({
-                                      ...current,
-                                      [user.email]: {
-                                        display_name: current[user.email]?.display_name ?? user.display_name,
-                                        role: event.target.value,
-                                        status: current[user.email]?.status ?? user.status,
-                                      },
-                                    }))
-                                  }
-                                />
-                              </label>
-                              <label className="field">
-                                <span>Status</span>
-                                <input
-                                  value={userDrafts[user.email]?.status ?? user.status}
-                                  onChange={(event) =>
-                                    setUserDrafts((current) => ({
-                                      ...current,
-                                      [user.email]: {
-                                        display_name: current[user.email]?.display_name ?? user.display_name,
-                                        role: current[user.email]?.role ?? user.role,
-                                        status: event.target.value,
-                                      },
-                                    }))
-                                  }
-                                />
-                              </label>
-                            </div>
-                            <div className="button-row">
-                              <button
-                                className="ghost-action"
-                                disabled={isSubmittingPanel}
-                                onClick={() => void handleUpdateUser(user.email)}
-                                type="button"
-                              >
-                                Update user
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="form-grid">
-                        <label className="field">
-                          <span>Name</span>
-                          <input
-                            value={userForm.display_name}
-                            onChange={(event) =>
-                              setUserForm((current) => ({ ...current, display_name: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <label className="field">
-                          <span>Role</span>
-                          <input
-                            value={userForm.role}
-                            onChange={(event) =>
-                              setUserForm((current) => ({ ...current, role: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <label className="field">
-                          <span>Email</span>
-                          <input
-                            value={userForm.email}
-                            onChange={(event) =>
-                              setUserForm((current) => ({ ...current, email: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <label className="field">
-                          <span>Password</span>
-                          <input
-                            type="password"
-                            value={userForm.password}
-                            onChange={(event) =>
-                              setUserForm((current) => ({ ...current, password: event.target.value }))
-                            }
-                          />
-                        </label>
-                      </div>
-                      <div className="button-row">
-                        <button
-                          className="ghost-action"
-                          disabled={isSubmittingPanel}
-                          onClick={() => void handleCreateUser()}
-                          type="button"
-                        >
-                          Add user
-                        </button>
-                      </div>
-                    </article>
-                  </section>
-                ) : null}
-
-                {workspacePanel === "knowledge" ? (
-                  <section className="two-column">
-                    <article className="surface-card">
-                      <div className="panel-header">
-                        <div>
-                          <p className="section-kicker">Knowledge sources</p>
-                          <h3>Connected context and uploads</h3>
-                        </div>
-                      </div>
-                      <div className="list-stack">
-                        {data.knowledge_sources.map((source) => (
-                          <div key={source.id} className="list-row">
-                            <div>
-                              <strong>{source.title}</strong>
-                              <p>{source.source_type} · {source.status} · {source.freshness}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="form-grid">
-                        <label className="field">
-                          <span>Source title</span>
-                          <input
-                            value={knowledgeForm.title}
-                            onChange={(event) =>
-                              setKnowledgeForm((current) => ({ ...current, title: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <label className="field">
-                          <span>Type</span>
-                          <input
-                            value={knowledgeForm.source_type}
-                            onChange={(event) =>
-                              setKnowledgeForm((current) => ({ ...current, source_type: event.target.value }))
-                            }
-                          />
-                        </label>
-                      </div>
-                      <div className="button-row">
-                        <button
-                          className="ghost-action"
-                          disabled={isSubmittingPanel}
-                          onClick={() => void handleAddKnowledgeSource()}
-                          type="button"
-                        >
-                          Add knowledge source
-                        </button>
-                      </div>
-                    </article>
-
-                    <article className="surface-card">
-                      <div className="panel-header">
-                        <div>
-                          <p className="section-kicker">Uploads</p>
-                          <h3>Ingest documents into the workspace</h3>
-                        </div>
-                      </div>
-                      <div className="form-grid">
-                        <label className="field field-full">
-                          <span>Title</span>
-                          <input
-                            value={uploadTitle}
-                            onChange={(event) => setUploadTitle(event.target.value)}
-                          />
-                        </label>
-                        <label className="field field-full">
-                          <span>Document</span>
-                          <input
-                            type="file"
-                            onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)}
-                          />
-                        </label>
-                      </div>
-                      <div className="button-row">
-                        <button
-                          className="primary-action"
-                          disabled={isUploading || !uploadFile}
-                          onClick={() => void handleUploadDocument()}
-                          type="button"
-                        >
-                          {isUploading ? "Uploading..." : "Upload document"}
-                        </button>
-                      </div>
-
-                      <div className="list-stack">
-                        {uploads.slice(0, 5).map((upload) => (
-                          <div key={upload.id} className="list-row">
-                            <div>
-                              <strong>{upload.filename}</strong>
-                              <p>{upload.storage_backend} · {formatTimestamp(upload.created_at)}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </article>
-                  </section>
-                ) : null}
-              </>
-            ) : null}
+            <section className="surface-card workbench-panel">
+              <div className="panel-header">
+                <div>
+                  <p className="section-kicker">Connected workbench</p>
+                  <h3>Open the deeper surface only when the thread needs it</h3>
+                </div>
+              </div>
+              <div className="workbench-tabs">
+                {surfaceOrder.map((surface) => (
+                  <button
+                    key={surface}
+                    className={activeSurface === surface ? "active" : ""}
+                    onClick={() => setActiveSurface(surface)}
+                    type="button"
+                  >
+                    {surfaceMeta[surface].label}
+                  </button>
+                ))}
+              </div>
+              {renderWorkbenchPanel()}
+            </section>
           </main>
 
           <aside className="context-rail">
@@ -2458,7 +2365,10 @@ function App() {
             <section className="context-card">
               <p className="section-kicker">Active artifact</p>
               <h3>{selectedArtifact?.title ?? "No active artifact"}</h3>
-              <p>{selectedArtifact?.summary ?? "The current output will surface here when the system creates or refreshes one."}</p>
+              <p>
+                {selectedArtifact?.summary ??
+                  "The current output will surface here when the system creates or refreshes one."}
+              </p>
             </section>
 
             <section className="context-card">
@@ -2545,18 +2455,20 @@ function App() {
               </div>
             </section>
 
-            {launchedApp ? (
+            {(launchedApp ?? selectedApp) ? (
               <section className="context-card">
                 <p className="section-kicker">Suggested app</p>
-                <h3>{launchedApp.title}</h3>
-                <p>{launchedApp.summary}</p>
+                <h3>{(launchedApp ?? selectedApp)?.title}</h3>
+                <p>{(launchedApp ?? selectedApp)?.summary}</p>
                 <div className="button-row">
                   <button
                     className="ghost-action"
                     onClick={() => {
-                      setSelectedAppId(launchedApp.id);
                       setActiveSurface("apps");
                       setAppSurface("run");
+                      if (launchedApp) {
+                        setSelectedAppId(launchedApp.id);
+                      }
                     }}
                     type="button"
                   >
