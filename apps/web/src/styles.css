@@ -262,6 +262,12 @@ button {
   color: var(--muted);
 }
 
+.topbar-pill-accent {
+  background: rgba(89, 225, 202, 0.1);
+  color: var(--accent);
+  border: 1px solid rgba(89, 225, 202, 0.18);
+}
+
 .content-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
@@ -319,6 +325,7 @@ button {
   padding: 1rem;
   background: rgba(255, 255, 255, 0.02);
   border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.035);
 }
 
 .metric-card span,
@@ -958,6 +965,7 @@ button {
   max-height: 560px;
   overflow: auto;
   padding-right: 0.25rem;
+  mask-image: linear-gradient(to bottom, black 92%, transparent 100%);
 }
 
 .split-panel {
@@ -1004,6 +1012,10 @@ button {
 
 .stacked-buttons {
   grid-template-columns: 1fr;
+}
+
+.context-rail-heading {
+  background: linear-gradient(180deg, rgba(15, 27, 47, 0.98), rgba(9, 17, 31, 0.98));
 }
 
 @media (max-width: 1280px) {

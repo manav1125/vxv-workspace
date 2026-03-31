@@ -505,6 +505,19 @@ function App() {
     return data.apps.find((app) => app.id === commandContext.launchedAppId) ?? null;
   }, [data, commandContext]);
 
+  const selectedAppRun = useMemo(() => {
+    if (!data || !selectedApp) {
+      return null;
+    }
+    return (
+      data.task_runs.find(
+        (task) =>
+          task.module === "apps" &&
+          task.title.toLowerCase().includes(selectedApp.title.toLowerCase()),
+      ) ?? null
+    );
+  }, [data, selectedApp]);
+
   const filteredApps = useMemo(() => {
     if (!data) {
       return [];
@@ -1259,6 +1272,7 @@ function App() {
             {error ? <p className="action-error">{error}</p> : null}
           </div>
           <div className="topbar-actions">
+            <div className="topbar-pill topbar-pill-accent">Session active</div>
             <div className="topbar-pill">{data.integrations.mode}</div>
             <div className="topbar-pill">{authSession.role}</div>
             {data.integrations.runtime_provider ? (
@@ -1276,8 +1290,8 @@ function App() {
                     <p className="section-kicker">Founder command loop</p>
                     <h2>Start in one thread. Let the workspace gather context, route work, and keep building.</h2>
                     <p>
-                      Command is the product kernel. Apps, artifacts, approvals, and capital outputs should all
-                      emerge from here instead of feeling like disconnected products.
+                      Command is the center of gravity. You should be able to ask, see what context was used,
+                      understand what ran, and keep going without switching mental models.
                     </p>
                   </div>
                   <div className="hero-metrics">
@@ -1641,6 +1655,9 @@ function App() {
                           <p className="section-kicker">App run</p>
                           <h3>{selectedApp?.title ?? "Select an app"}</h3>
                         </div>
+                        {selectedAppRun ? (
+                          <span className="status-pill success">{selectedAppRun.status}</span>
+                        ) : null}
                       </div>
                       <p>{selectedApp?.summary ?? "Choose an app from the library to begin."}</p>
                       <div className="tag-strip">
@@ -1675,7 +1692,7 @@ function App() {
                     <article className="surface-card split-main">
                       <div className="panel-header">
                         <div>
-                          <p className="section-kicker">Generated output</p>
+                          <p className="section-kicker">Artifact preview</p>
                           <h3>{selectedArtifact?.title ?? "App artifacts appear here"}</h3>
                         </div>
                       </div>
@@ -1685,6 +1702,27 @@ function App() {
                         ) : (
                           <p>Run an app to create a linked artifact and execution trace.</p>
                         )}
+                      </div>
+                      <div className="button-row">
+                        <button
+                          className="primary-action"
+                          disabled={isSavingArtifact || !selectedArtifact}
+                          onClick={() => void handleSaveArtifact()}
+                          type="button"
+                        >
+                          {isSavingArtifact ? "Saving..." : "Save to artifacts"}
+                        </button>
+                        <button className="ghost-action" type="button">
+                          Share with team
+                        </button>
+                        <button
+                          className="ghost-action"
+                          disabled={isPublishingRoom || !selectedArtifact}
+                          onClick={() => void handlePublishInvestorRoom()}
+                          type="button"
+                        >
+                          {isPublishingRoom ? "Publishing..." : "Publish to investor room"}
+                        </button>
                       </div>
                     </article>
                   </section>
@@ -2411,6 +2449,12 @@ function App() {
           </main>
 
           <aside className="context-rail">
+            <section className="context-card context-rail-heading">
+              <p className="section-kicker">Context rail</p>
+              <h3>Operating context</h3>
+              <p>Keep the active artifact, run trace, approvals, and next actions visible while the thread moves.</p>
+            </section>
+
             <section className="context-card">
               <p className="section-kicker">Active artifact</p>
               <h3>{selectedArtifact?.title ?? "No active artifact"}</h3>
@@ -2433,7 +2477,7 @@ function App() {
 
             <section className="context-card">
               <p className="section-kicker">Context used</p>
-              <h3>Grounding</h3>
+              <h3>Sources and memory</h3>
               <div className="list-stack">
                 {contextItems.map((item) => (
                   <div key={item} className="list-row">
