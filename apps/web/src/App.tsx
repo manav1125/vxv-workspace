@@ -16,15 +16,7 @@ import {
   updateWorkspace,
   uploadDocument,
 } from "./lib/api";
-import type {
-  AppCategory,
-  AuthSession,
-  BootstrapResponse,
-  MemoryItem,
-  ModuleKey,
-  ThreadNode,
-  UploadRecord,
-} from "./types";
+import type { AppCategory, AuthSession, BootstrapResponse, MemoryItem, ModuleKey, ThreadNode, UploadRecord } from "./types";
 
 type PanelState = "artifact" | "app" | "workspace" | null;
 
@@ -34,12 +26,6 @@ const focusOptions: Array<{ key: ModuleKey; label: string }> = [
   { key: "execution", label: "Execution" },
   { key: "capital", label: "Capital" },
   { key: "apps", label: "Apps" },
-];
-
-const starterPrompts = [
-  "Turn the founder vision into the next 90-day operating plan.",
-  "Summarize what is blocked and what needs my decision right now.",
-  "Prepare an investor update from the latest workspace activity.",
 ];
 
 const onboardingPrompts = [
@@ -64,23 +50,6 @@ function categoryLabel(value: AppCategory) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-function buildBranchTitle(module: ModuleKey) {
-  switch (module) {
-    case "strategy":
-      return "Strategy branch";
-    case "execution":
-      return "Execution branch";
-    case "capital":
-      return "Capital branch";
-    case "apps":
-      return "App branch";
-    case "artifacts":
-      return "Artifact branch";
-    default:
-      return "Current thread";
-  }
-}
-
 function App() {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [data, setData] = useState<BootstrapResponse | null>(null);
@@ -99,6 +68,8 @@ function App() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const [panel, setPanel] = useState<PanelState>(null);
+  const [memoryOpen, setMemoryOpen] = useState(true);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const [focusModule, setFocusModule] = useState<ModuleKey>("inbox");
   const [composerDraft, setComposerDraft] = useState("");
   const [appPrompt, setAppPrompt] = useState("");
@@ -108,7 +79,6 @@ function App() {
 
   const [selectedArtifactId, setSelectedArtifactId] = useState("");
   const [selectedAppId, setSelectedAppId] = useState("");
-  const [selectedBranchId, setSelectedBranchId] = useState("current-thread");
 
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [loginForm, setLoginForm] = useState({
@@ -210,27 +180,6 @@ function App() {
         task.title.toLowerCase().includes(selectedApp.title.toLowerCase()),
     ) ?? null;
 
-  const branchItems = useMemo(() => {
-    if (!data) {
-      return [];
-    }
-    const items = [
-      {
-        id: "current-thread",
-        title: "Current thread",
-        subtitle: "The active founder conversation.",
-        module: focusModule,
-      },
-      ...data.task_runs.slice(0, 4).map((task) => ({
-        id: task.id,
-        title: task.title,
-        subtitle: task.trace_summary,
-        module: task.module,
-      })),
-    ];
-    return items;
-  }, [data, focusModule]);
-
   const sidecarItems = useMemo(() => {
     const seen = new Set<string>();
     const items = [...latestMemoryHits, ...(data?.memory_items ?? [])].filter((item) => {
@@ -317,6 +266,7 @@ function App() {
       const response = await uploadDocument(uploadFile, focusModule, uploadTitle || undefined);
       setSelectedArtifactId(response.artifact.id);
       setPanel("artifact");
+      setUploadOpen(false);
       setUploadFile(null);
       setUploadTitle("");
       setNotice("Document added to workspace memory.");
@@ -547,115 +497,49 @@ function App() {
   }
 
   return (
-    <div className="thread-app-shell">
-      <aside className="thread-sidebar">
-        <div className="sidebar-section">
-          <p className="eyebrow">VXV Workspace</p>
-          <h2>{data.workspace.company_name}</h2>
-          <p className="sidebar-copy">
-            Founder operating system with one persistent thread and one permanent memory layer.
-          </p>
-        </div>
-
-        <div className="sidebar-section">
-          <div className="sidebar-heading-row">
-            <h3>Branches</h3>
-            <span className="sidebar-meta">{buildBranchTitle(focusModule)}</span>
+    <div className="chat-app-shell">
+      <main className="chat-main">
+        <header className="chat-header">
+          <div className="chat-header-copy">
+            <span className="workspace-label">{data.workspace.company_name}</span>
+            <h1>VXV Workspace</h1>
           </div>
-          <div className="branch-list">
-            {branchItems.map((branch) => (
-              <button
-                key={branch.id}
-                className={`branch-chip ${selectedBranchId === branch.id ? "active" : ""}`}
-                onClick={() => {
-                  setSelectedBranchId(branch.id);
-                  setFocusModule(branch.module);
-                }}
-              >
-                <strong>{branch.title}</strong>
-                <span>{branch.subtitle}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="sidebar-section sidebar-actions">
-          <button className="button-secondary" onClick={() => setPanel("workspace")}>
-            Workspace settings
-          </button>
-          <button
-            className="button-secondary"
-            onClick={() => {
-              clearAuthToken();
-              setSession(null);
-              setData(null);
-            }}
-          >
-            Log out
-          </button>
-        </div>
-      </aside>
-
-      <main className="thread-main">
-        <header className="thread-header">
-          <div>
-            <p className="eyebrow">Command workspace</p>
-            <h1>Ask once. Let the workspace gather context, invoke the right workflow, and keep the work connected.</h1>
-          </div>
-          <div className="thread-status">
-            <span className="status-pill">Session active</span>
-            <span className="status-pill">{data.integrations.mode}</span>
-            <span className="status-pill">{data.workspace.primary_kpi}</span>
+          <div className="chat-header-controls">
+            <label className="lens-select">
+              <span>Lens</span>
+              <select value={focusModule} onChange={(event) => setFocusModule(event.target.value as ModuleKey)}>
+                {focusOptions.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button className="button-secondary" onClick={() => setMemoryOpen((current) => !current)}>
+              {memoryOpen ? "Hide memory" : "Show memory"}
+            </button>
+            <button className="button-secondary" onClick={() => setPanel("workspace")}>
+              Settings
+            </button>
+            <button
+              className="button-secondary"
+              onClick={() => {
+                clearAuthToken();
+                setSession(null);
+                setData(null);
+              }}
+            >
+              Log out
+            </button>
           </div>
         </header>
 
         {notice ? <p className="status-notice">{notice}</p> : null}
         {error ? <p className="status-error">{error}</p> : null}
 
-        <div className="thread-layout">
-          <section className="thread-center">
-            <div className="thread-intro-card">
-              <div>
-                <p className="eyebrow">Founder command loop</p>
-                <h2>Chat is temporal. Memory is permanent. Apps appear only when the thread needs deeper work.</h2>
-                <p className="lede">
-                  The thread is the default working surface. Artifacts, approvals, investor work,
-                  and apps should appear only when they help the current conversation move forward.
-                </p>
-              </div>
-              <div className="metric-strip">
-                <div>
-                  <span>Goals</span>
-                  <strong>{data.metrics.active_goals}</strong>
-                </div>
-                <div>
-                  <span>Runs</span>
-                  <strong>{data.metrics.running_tasks}</strong>
-                </div>
-                <div>
-                  <span>Artifacts</span>
-                  <strong>{data.metrics.ready_artifacts}</strong>
-                </div>
-                <div>
-                  <span>Investors</span>
-                  <strong>{data.metrics.warm_investors}</strong>
-                </div>
-              </div>
-            </div>
-
-            <div className="thread-focus-row">
-              {focusOptions.map((option) => (
-                <button
-                  key={option.key}
-                  className={`focus-pill ${focusModule === option.key ? "active" : ""}`}
-                  onClick={() => setFocusModule(option.key)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="thread-card">
+        <div className={`chat-layout ${memoryOpen ? "with-memory" : "without-memory"}`}>
+          <section className="chat-column">
+            <div className="chat-surface">
               <div className="thread-stream">
                 {messages.map((message) => {
                   const nodes = message.nodes ?? [];
@@ -743,21 +627,13 @@ function App() {
                 })}
               </div>
 
-              <div className="thread-suggestions">
-                {starterPrompts.map((prompt) => (
-                  <button key={prompt} className="suggestion-chip" onClick={() => setComposerDraft(prompt)}>
-                    {prompt}
-                  </button>
-                ))}
-              </div>
-
-              <div className="composer-card">
+              <div className="composer-card composer-minimal">
                 <textarea
                   value={composerDraft}
                   onChange={(event) => setComposerDraft(event.target.value)}
-                  placeholder="Ask the workspace to plan, research, coordinate, generate, or act."
+                  placeholder="Ask the workspace anything."
                 />
-                <div className="composer-controls">
+                {uploadOpen ? (
                   <div className="upload-inline">
                     <input
                       value={uploadTitle}
@@ -769,69 +645,54 @@ function App() {
                       onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)}
                     />
                     <button className="button-secondary" onClick={() => void handleUpload()} disabled={isUploading}>
-                      {isUploading ? "Uploading…" : "Add to memory"}
+                      {isUploading ? "Uploading…" : "Add file"}
                     </button>
                   </div>
+                ) : null}
+                <div className="composer-controls composer-controls-minimal">
+                  <button className="button-secondary" onClick={() => setUploadOpen((current) => !current)}>
+                    {uploadOpen ? "Hide upload" : "Add file"}
+                  </button>
+                  {latestActions.length ? (
+                    <button className="button-secondary" onClick={() => setComposerDraft(latestActions[0])}>
+                      Suggested follow-up
+                    </button>
+                  ) : null}
                   <button
                     className="button-primary"
                     onClick={() => void handleSendMessage(composerDraft)}
                     disabled={isSending}
                   >
-                    {isSending ? "Working…" : "Send to workspace"}
+                    {isSending ? "Working…" : "Send"}
                   </button>
                 </div>
               </div>
             </div>
           </section>
 
-          <aside className="memory-rail">
-            <div className="memory-card">
-              <div className="memory-card-header">
-                <div>
-                  <p className="eyebrow">Memory</p>
-                  <h2>Permanent context</h2>
+          {memoryOpen ? (
+            <aside className="memory-rail memory-rail-minimal">
+              <div className="memory-card">
+                <div className="memory-card-header">
+                  <div>
+                    <p className="eyebrow">Memory</p>
+                    <h2>Persistent context</h2>
+                  </div>
                 </div>
-                <button className="button-secondary" onClick={() => setPanel("workspace")}>
-                  Edit
-                </button>
-              </div>
-              <div className="memory-list">
-                {sidecarItems.map((item) => (
-                  <div key={item.id} className={`memory-item memory-${item.kind}`}>
-                    <div className="memory-title-row">
-                      <strong>{item.title}</strong>
-                      {item.pinned ? <span className="mini-tag">Pinned</span> : null}
+                <div className="memory-list">
+                  {sidecarItems.map((item) => (
+                    <div key={item.id} className={`memory-item memory-${item.kind}`}>
+                      <div className="memory-title-row">
+                        <strong>{item.title}</strong>
+                        {item.pinned ? <span className="mini-tag">Pinned</span> : null}
+                      </div>
+                      <p>{item.summary}</p>
                     </div>
-                    <p>{item.summary}</p>
-                    <span>{formatTimestamp(item.updated_at)}</span>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-
-            <div className="memory-card">
-              <p className="eyebrow">Next actions</p>
-              <div className="mini-list">
-                {(latestActions.length ? latestActions : starterPrompts).map((action) => (
-                  <button key={action} className="mini-list-item" onClick={() => setComposerDraft(action)}>
-                    {action}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="memory-card">
-              <p className="eyebrow">Latest uploads</p>
-              <div className="mini-list">
-                {uploads.slice(0, 4).map((upload) => (
-                  <div key={upload.id} className="mini-record">
-                    <strong>{upload.filename}</strong>
-                    <span>{formatTimestamp(upload.created_at)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </aside>
+            </aside>
+          ) : null}
         </div>
       </main>
 
