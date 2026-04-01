@@ -342,6 +342,27 @@ h3 {
   border: 1px solid rgba(255, 255, 255, 0.045);
 }
 
+.mini-record-button {
+  width: 100%;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.tool-call-preview {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.tool-call-preview p {
+  margin: 0;
+  color: var(--muted-2);
+  font-size: 0.85rem;
+}
+
 .thread-node {
   display: grid;
   gap: 0.7rem;

@@ -134,6 +134,38 @@ export interface ChatMessage {
   next_actions: string[];
 }
 
+export interface ToolCallRecord {
+  id: string;
+  name: string;
+  status: string;
+  summary: string;
+  input_preview: string;
+  output_preview: string;
+  created_at: string;
+  artifact_id?: string | null;
+  app_id?: string | null;
+  skill_id?: string | null;
+}
+
+export interface ThreadExecutionSession {
+  id: string;
+  thread_id: string;
+  message_id?: string | null;
+  module: ModuleKey;
+  prompt: string;
+  status: string;
+  agent_id: string;
+  created_at: string;
+  updated_at: string;
+  summary: string;
+  selected_artifact_id?: string | null;
+  task_run_id?: string | null;
+  app_id?: string | null;
+  output_artifact_ids: string[];
+  tool_calls: ToolCallRecord[];
+  response_excerpt?: string | null;
+}
+
 export interface WorkflowDefinition {
   id: string;
   title: string;
@@ -233,6 +265,7 @@ export interface BootstrapResponse {
   investor_room: InvestorRoom;
   messages: ChatMessage[];
   memory_items: MemoryItem[];
+  thread_executions: ThreadExecutionSession[];
   integrations: IntegrationStatus;
   metrics: DashboardMetrics;
 }
@@ -254,6 +287,7 @@ export interface ChatResponse {
   next_actions: string[];
   nodes: ThreadNode[];
   memory_hits: MemoryItem[];
+  thread_execution?: ThreadExecutionSession | null;
   launched_app_id?: string | null;
   updated_metrics: DashboardMetrics;
 }
@@ -288,5 +322,6 @@ export interface ThreadNode {
   artifact_id?: string | null;
   task_run_id?: string | null;
   app_id?: string | null;
+  thread_execution_id?: string | null;
   cta_label?: string | null;
 }

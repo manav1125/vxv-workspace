@@ -4,7 +4,9 @@ import os
 from dataclasses import dataclass
 from importlib import import_module
 from threading import Lock
-from typing import Optional
+from typing import Optional, Type
+
+from pydantic import BaseModel
 
 from .models import IntegrationStatus
 
@@ -167,3 +169,32 @@ class AgentScopeRuntimeAdapter:
         )
         response = agent(Msg("Founder", user_prompt, role="user"))
         return str(response.content)
+
+    def run_react(
+        self,
+        *,
+        agent_name: str,
+        sys_prompt: str,
+        toolkit,
+        user_prompt: str,
+        structured_model: Type[BaseModel] | None = None,
+    ) -> tuple[str, dict | None]:
+        if not self.is_ready():
+            raise RuntimeError("AgentScope runtime is not ready.")
+
+        self._initialize()
+
+        from agentscope.agents import ReActAgentV2
+        from agentscope.message import Msg
+
+        agent = ReActAgentV2(
+            name=agent_name,
+            sys_prompt=sys_prompt,
+            model_config_name=self._config_name,
+            service_toolkit=toolkit,
+            max_iters=8,
+            verbose=False,
+            exit_reply_without_tool_calls=False,
+        )
+        response = agent(Msg("Founder", user_prompt, role="user"), structured_model=structured_model)
+        return str(response.content), response.metadata if isinstance(response.metadata, dict) else None

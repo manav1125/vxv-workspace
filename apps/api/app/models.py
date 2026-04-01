@@ -195,6 +195,38 @@ class ChatMessage(BaseModel):
     next_actions: List[str] = Field(default_factory=list)
 
 
+class ToolCallRecord(BaseModel):
+    id: str
+    name: str
+    status: str
+    summary: str
+    input_preview: str
+    output_preview: str
+    created_at: str
+    artifact_id: Optional[str] = None
+    app_id: Optional[str] = None
+    skill_id: Optional[str] = None
+
+
+class ThreadExecutionSession(BaseModel):
+    id: str
+    thread_id: str
+    message_id: Optional[str] = None
+    module: ModuleKey
+    prompt: str
+    status: str
+    agent_id: str
+    created_at: str
+    updated_at: str
+    summary: str
+    selected_artifact_id: Optional[str] = None
+    task_run_id: Optional[str] = None
+    app_id: Optional[str] = None
+    output_artifact_ids: List[str] = Field(default_factory=list)
+    tool_calls: List["ToolCallRecord"] = Field(default_factory=list)
+    response_excerpt: Optional[str] = None
+
+
 class ThreadNode(BaseModel):
     id: str
     kind: str
@@ -207,6 +239,7 @@ class ThreadNode(BaseModel):
     artifact_id: Optional[str] = None
     task_run_id: Optional[str] = None
     app_id: Optional[str] = None
+    thread_execution_id: Optional[str] = None
     cta_label: Optional[str] = None
 
 
@@ -270,6 +303,7 @@ class BootstrapResponse(BaseModel):
     investor_room: InvestorRoom
     messages: List[ChatMessage]
     memory_items: List[MemoryItem]
+    thread_executions: List[ThreadExecutionSession]
     integrations: IntegrationStatus
     metrics: DashboardMetrics
 
@@ -378,6 +412,7 @@ class ChatResponse(BaseModel):
     next_actions: List[str]
     nodes: List[ThreadNode]
     memory_hits: List[MemoryItem]
+    thread_execution: Optional[ThreadExecutionSession] = None
     launched_app_id: Optional[str] = None
     updated_metrics: DashboardMetrics
 

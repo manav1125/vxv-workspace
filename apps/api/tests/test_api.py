@@ -40,6 +40,7 @@ def test_bootstrap_includes_apps_and_skills() -> None:
     payload = response.json()
     assert "apps" in payload
     assert "skills" in payload
+    assert "thread_executions" in payload
     assert any(item["title"] == "Pitch Deck Reviewer" for item in payload["apps"])
 
 
@@ -88,6 +89,9 @@ def test_launch_app_creates_run_and_artifact() -> None:
     assert payload["task_run"]["module"] == "apps"
     assert payload["artifact"]["module"] == "apps"
     assert payload["artifact"]["title"] == "Pitch Deck Reviewer Output"
+
+    bootstrap = client.get("/api/bootstrap", headers=headers).json()
+    assert any(execution["app_id"] == "app-pitch-reviewer" for execution in bootstrap["thread_executions"])
 
 
 def test_publish_investor_room_curates_selected_artifact() -> None:
@@ -226,11 +230,13 @@ def test_chat_executes_skill_flow_and_persists_nodes() -> None:
     assert any(node["kind"] == "skill" for node in payload["nodes"])
     assert any(node["kind"] == "artifact" for node in payload["nodes"])
     assert any(item["kind"] in {"artifact", "knowledge", "goal", "workspace", "thread", "capital"} for item in payload["memory_hits"])
+    assert payload["thread_execution"]["tool_calls"]
 
     bootstrap = client.get("/api/bootstrap", headers=headers).json()
     latest_assistant = [message for message in bootstrap["messages"] if message["role"] == "assistant"][-1]
     assert latest_assistant["nodes"]
     assert latest_assistant["memory_hits"]
+    assert bootstrap["thread_executions"]
 
 
 def test_owner_can_create_workspace_user() -> None:

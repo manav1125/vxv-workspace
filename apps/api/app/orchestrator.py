@@ -16,12 +16,15 @@ from .models import (
     PublishInvestorRoomRequest,
     TaskRun,
     TaskStatus,
+    ThreadExecutionSession,
     ThreadNode,
+    ToolCallRecord,
     WorkflowLaunchRequest,
 )
 from .runtime import AgentScopeRuntimeAdapter
 from .skill_engine import SkillEngine, SkillExecution
 from .store import DemoStore
+from .tool_adapters import ThreadToolAdapters, ThreadToolContext
 
 
 class FounderOrchestrator:
@@ -107,68 +110,25 @@ class FounderOrchestrator:
                 deduped.append(skill)
         return deduped
 
-    def _selected_artifact_content(self, artifact_id: str | None) -> str | None:
-        if not artifact_id:
-            return None
-        try:
-            return self.store.get_artifact(artifact_id).content
-        except KeyError:
-            return None
-
-    def _execute_skills(
-        self,
-        *,
-        skill_ids: Iterable[str],
-        founder_prompt: str,
-        memory_hits: list[MemoryItem],
-        selected_artifact_id: str | None,
-    ) -> list[SkillExecution]:
-        selected_artifact = self._selected_artifact_content(selected_artifact_id)
-        executions: list[SkillExecution] = []
-        for skill_id in skill_ids:
-            executions.append(
-                self.skill_engine.run(
-                    skill_id=skill_id,
-                    founder_prompt=founder_prompt,
-                    memory_hits=memory_hits,
-                    workspace_name=self.store.workspace.company_name,
-                    founder_name=self.store.workspace.founder_name,
-                    selected_artifact_content=selected_artifact,
-                )
-            )
-        return executions
-
-    def _compose_artifact(
+    def _compose_skill_artifact(
         self,
         *,
         task: TaskRun,
         module: ModuleKey,
-        app_id: str | None,
         executions: list[SkillExecution],
     ) -> Artifact:
         primary = executions[0]
-        if app_id:
-            app = self.store.get_app(app_id)
-            title = f"{app.title} Output"
-            summary = f"{app.title} ran {len(executions)} skill(s) and saved a reusable output."
-            kind = ArtifactKind.REPORT if module == ModuleKey.APPS else primary.artifact_kind
-        elif len(executions) == 1:
+        if len(executions) == 1:
             title = primary.artifact_title
             summary = primary.artifact_summary
             kind = primary.artifact_kind
         else:
             title = "Founder Workspace Output"
-            summary = "Combined output assembled from multiple workspace skills."
+            summary = "Combined output assembled from multiple founder workspace actions."
             kind = ArtifactKind.REPORT
 
         content = "\n\n".join(
-            [
-                f"# {title}",
-                *[
-                    f"## {execution.title}\n\n{execution.body}"
-                    for execution in executions
-                ],
-            ]
+            [f"# {title}"] + [f"## {execution.title}\n\n{execution.body}" for execution in executions]
         )
         return self.store.upsert_artifact(
             title=title,
@@ -186,12 +146,13 @@ class FounderOrchestrator:
         active_agent_name: str,
         active_agent_role: str,
         module: ModuleKey,
-        artifact: Artifact,
+        artifact: Artifact | None,
         memory_hits: list[MemoryItem],
         executions: list[SkillExecution],
         app_id: str | None,
+        execution_summary: str,
     ) -> str:
-        executed_titles = ", ".join(execution.title for execution in executions)
+        executed_titles = ", ".join(execution.title for execution in executions) or "workspace reasoning"
         context_lines = "\n".join(f"- {item.title}: {item.summary}" for item in memory_hits[:5])
         if self.runtime.is_ready():
             try:
@@ -199,14 +160,15 @@ class FounderOrchestrator:
                     f"You are {active_agent_name} inside VXV Workspace.\n"
                     f"Role: {active_agent_role}\n"
                     f"Module: {module.value}\n"
-                    "Respond like a founder chief of staff. Be specific, grounded, and action-oriented.\n"
-                    "Use markdown with sections: What happened, Context used, Recommended next step."
+                    "You are acting like a co-founder and chief of staff for the founder.\n"
+                    "Be specific, operational, and concise. Use markdown sections: What I did, What I found, Next move."
                 )
                 user_prompt = (
                     f"Founder request:\n{prompt}\n\n"
-                    f"Executed skill work:\n- {executed_titles}\n\n"
-                    f"Saved artifact: {artifact.title}\n"
-                    f"Artifact summary: {artifact.summary}\n\n"
+                    f"Execution summary:\n{execution_summary}\n\n"
+                    f"Executed tools and skills:\n- {executed_titles}\n\n"
+                    f"Saved artifact: {artifact.title if artifact else 'None'}\n"
+                    f"Artifact summary: {artifact.summary if artifact else 'No artifact saved yet'}\n\n"
                     f"Memory used:\n{context_lines or '- None'}\n\n"
                     f"App launched: {app_id or 'None'}"
                 )
@@ -219,42 +181,47 @@ class FounderOrchestrator:
                 pass
 
         action_line = (
-            f"I used the {self.store.get_app(app_id).title} workflow to execute {executed_titles}."
-            if app_id
-            else f"I executed {executed_titles} and saved the result as `{artifact.title}`."
+            f"I launched the {self.store.get_app(app_id).title} workspace and saved `{artifact.title}`."
+            if app_id and artifact
+            else f"I executed {executed_titles} and saved `{artifact.title}`." if artifact
+            else f"I worked through the request and prepared the next actions."
         )
         return (
             f"## {active_agent_name}\n\n"
-            "### What happened\n"
+            "### What I did\n"
             f"- {action_line}\n"
-            f"- The thread now has a reusable artifact: `{artifact.title}`\n\n"
-            "### Context used\n"
-            f"{context_lines or '- No prior memory was needed for this turn.'}\n\n"
-            "### Recommended next step\n"
-            "- Review the embedded nodes below.\n"
-            "- Open the artifact or app workspace if you want to go deeper.\n"
-            "- Keep working in this same thread so the memory stays continuous.\n"
+            f"- {execution_summary}\n\n"
+            "### What I found\n"
+            f"{context_lines or '- I worked mostly from the current thread context.'}\n\n"
+            "### Next move\n"
+            "- Review the embedded nodes in this thread.\n"
+            "- Open the workspace panel if you want to refine or publish the output.\n"
+            "- Keep working in this thread so the memory stays continuous.\n"
         )
 
-    def _next_actions(self, app_id: str | None, executions: list[SkillExecution]) -> list[str]:
+    def _next_actions(self, app_id: str | None, executions: list[SkillExecution], tool_calls: list[ToolCallRecord]) -> list[str]:
         actions = [
             "Keep refining this in the same thread.",
             "Open the latest artifact and tighten it before sharing.",
-            "Branch from this thread if you want to explore an alternate direction.",
+            "Ask the workspace to branch this into an alternate plan if needed.",
         ]
         if app_id:
-            actions.insert(0, "Open the app workspace for deeper review.")
-        if any(execution.module == ModuleKey.CAPITAL for execution in executions):
-            actions.insert(0, "Publish the strongest output to the investor room when it is ready.")
+            actions.insert(0, "Open the app workspace for deeper execution.")
+        if any(call.name == "publish_to_investor_room" for call in tool_calls):
+            actions.insert(0, "Share the investor room once the founder approves the latest output.")
+        elif any(execution.module == ModuleKey.CAPITAL for execution in executions):
+            actions.insert(0, "Publish the strongest capital output to the investor room when ready.")
         return actions[:4]
 
     def _build_nodes(
         self,
         *,
         task: TaskRun,
-        artifact: Artifact,
+        artifact: Artifact | None,
         executions: list[SkillExecution],
         app_id: str | None,
+        execution_session: ThreadExecutionSession,
+        tool_calls: list[ToolCallRecord],
     ) -> list[ThreadNode]:
         nodes: list[ThreadNode] = [
             ThreadNode(
@@ -266,11 +233,13 @@ class FounderOrchestrator:
                 bullet_points=[
                     f"Owner: {task.owner_agent_id}",
                     f"Trace: {task.trace_summary}",
-                    f"Outputs: {', '.join(task.outputs)}",
+                    f"Tools used: {', '.join(call.name for call in tool_calls[:4]) or 'No tools recorded'}",
                 ],
                 task_run_id=task.id,
+                thread_execution_id=execution_session.id,
             )
         ]
+
         if app_id:
             app = self.store.get_app(app_id)
             nodes.append(
@@ -285,9 +254,11 @@ class FounderOrchestrator:
                         f"Outputs: {', '.join(app.artifact_outputs)}",
                     ],
                     app_id=app.id,
+                    thread_execution_id=execution_session.id,
                     cta_label="Open app workspace",
                 )
             )
+
         for execution in executions:
             nodes.append(
                 ThreadNode(
@@ -298,25 +269,30 @@ class FounderOrchestrator:
                     status="completed",
                     body=execution.body[:1400],
                     bullet_points=execution.bullet_points,
+                    thread_execution_id=execution_session.id,
                 )
             )
-        nodes.append(
-            ThreadNode(
-                id=f"node-artifact-{artifact.id}",
-                kind="artifact",
-                title=artifact.title,
-                summary=artifact.summary,
-                status="ready",
-                expanded_by_default=True,
-                body=artifact.content[:1800],
-                bullet_points=[
-                    f"Module: {artifact.module.value}",
-                    f"Updated: {artifact.updated_at}",
-                ],
-                artifact_id=artifact.id,
-                cta_label="Open artifact",
+
+        if artifact:
+            nodes.append(
+                ThreadNode(
+                    id=f"node-artifact-{artifact.id}",
+                    kind="artifact",
+                    title=artifact.title,
+                    summary=artifact.summary,
+                    status="ready",
+                    expanded_by_default=True,
+                    body=artifact.content[:1800],
+                    bullet_points=[
+                        f"Module: {artifact.module.value}",
+                        f"Updated: {artifact.updated_at}",
+                    ],
+                    artifact_id=artifact.id,
+                    thread_execution_id=execution_session.id,
+                    cta_label="Open artifact",
+                )
             )
-        )
+
         if task.requires_approval:
             nodes.append(
                 ThreadNode(
@@ -331,112 +307,296 @@ class FounderOrchestrator:
                         "Reject to stop the action",
                     ],
                     task_run_id=task.id,
+                    thread_execution_id=execution_session.id,
                     cta_label="Review approval",
                 )
             )
         return nodes
 
-    def _run_thread_flow(
+    def _execute_fallback_tools(
+        self,
+        *,
+        adapters: ThreadToolAdapters,
+        module: ModuleKey,
+        prompt: str,
+        selected_artifact_id: str | None,
+        explicit_app_id: str | None,
+    ) -> str:
+        adapters.retrieve_workspace_memory(prompt)
+        if selected_artifact_id:
+            adapters.inspect_selected_artifact(selected_artifact_id)
+
+        app_id = explicit_app_id or self._pick_app_id(prompt, module)
+        if app_id:
+            adapters.launch_workspace_app(app_id, prompt)
+        else:
+            for skill_id in self._infer_skill_ids(prompt, module, app_id)[:2]:
+                adapters.run_workspace_skill(skill_id, prompt)
+
+        if module == ModuleKey.CAPITAL and any(keyword in prompt.lower() for keyword in ["publish", "send room", "investor room"]):
+            adapters.publish_to_investor_room()
+
+        return ""
+
+    def _run_thread_runtime(
+        self,
+        *,
+        module: ModuleKey,
+        prompt: str,
+        active_agent,
+        selected_artifact_id: str | None,
+        task: TaskRun,
+        execution_session: ThreadExecutionSession,
+        explicit_app_id: str | None = None,
+    ) -> tuple[str, list[MemoryItem], list[SkillExecution], list[ToolCallRecord], str | None, Artifact | None]:
+        context = ThreadToolContext(
+            execution_id=execution_session.id,
+            founder_prompt=prompt,
+            module=module,
+            active_agent_id=active_agent.id,
+            task_run_id=task.id,
+            selected_artifact_id=selected_artifact_id,
+        )
+        adapters = ThreadToolAdapters(self.store, self.skill_engine, context)
+
+        if self.runtime.is_ready():
+            system_prompt = (
+                f"You are {active_agent.name}, the {active_agent.role}\n"
+                "You are operating inside VXV Workspace for a founder.\n"
+                "Always keep the work in one thread.\n"
+                "Before answering, retrieve workspace memory.\n"
+                "If there is an attached artifact or the founder references a document or deck, inspect it.\n"
+                "When meaningful work is needed, use either run_workspace_skill or launch_workspace_app.\n"
+                "Use publish_to_investor_room only for investor-facing capital work.\n"
+                "After tool use, call generate_response with a concise but useful founder-facing answer."
+            )
+            runtime_prompt = prompt
+            if explicit_app_id:
+                app = self.store.get_app(explicit_app_id)
+                runtime_prompt = f"Launch the app `{app.title}` for this founder request: {prompt}"
+            try:
+                reply_content, _metadata = self.runtime.run_react(
+                    agent_name=active_agent.name,
+                    sys_prompt=system_prompt,
+                    toolkit=adapters.build_toolkit(),
+                    user_prompt=runtime_prompt,
+                )
+            except Exception:
+                reply_content = self._execute_fallback_tools(
+                    adapters=adapters,
+                    module=module,
+                    prompt=prompt,
+                    selected_artifact_id=selected_artifact_id,
+                    explicit_app_id=explicit_app_id,
+                )
+        else:
+            reply_content = self._execute_fallback_tools(
+                adapters=adapters,
+                module=module,
+                prompt=prompt,
+                selected_artifact_id=selected_artifact_id,
+                explicit_app_id=explicit_app_id,
+            )
+
+        if not adapters.tool_calls() or (
+            not adapters.skill_executions() and adapters.launched_app_id() is None and adapters.output_artifact() is None
+        ):
+            reply_content = self._execute_fallback_tools(
+                adapters=adapters,
+                module=module,
+                prompt=prompt,
+                selected_artifact_id=selected_artifact_id,
+                explicit_app_id=explicit_app_id,
+            )
+
+        artifact = adapters.output_artifact()
+        executions = adapters.skill_executions()
+        if artifact is None and executions:
+            artifact = self._compose_skill_artifact(task=task, module=module, executions=executions)
+
+        return (
+            reply_content,
+            adapters.memory_hits(),
+            executions,
+            adapters.tool_calls(),
+            adapters.launched_app_id() or explicit_app_id,
+            artifact,
+        )
+
+    def _complete_task(
+        self,
+        *,
+        task: TaskRun,
+        module: ModuleKey,
+        active_agent_id: str,
+        memory_hits: list[MemoryItem],
+        executions: list[SkillExecution],
+        tool_calls: list[ToolCallRecord],
+        artifact: Artifact | None,
+        app_id: str | None,
+    ) -> TaskRun:
+        task.status = TaskStatus.WAITING if module in {ModuleKey.CAPITAL, ModuleKey.EXECUTION} else TaskStatus.COMPLETED
+        task.requires_approval = module in {ModuleKey.CAPITAL, ModuleKey.EXECUTION}
+        task.progress_label = (
+            f"App `{self.store.get_app(app_id).title}` executed and saved founder output."
+            if app_id
+            else f"Executed {len(tool_calls)} tool action(s) from the founder thread."
+        )
+        task.trace_summary = (
+            f"{active_agent_id} retrieved {len(memory_hits)} memory item(s), used "
+            f"{', '.join(call.name for call in tool_calls) or 'no explicit tools'}, and "
+            f"{'saved ' + artifact.title if artifact else 'left the result in-thread'}."
+        )
+        task.outputs = [artifact.title] if artifact else [execution.artifact_title for execution in executions]
+        self.store.persist()
+        return task
+
+    def _run_turn(
         self,
         *,
         module: ModuleKey,
         prompt: str,
         selected_artifact_id: str | None = None,
         explicit_app_id: str | None = None,
+        append_user_message: bool = True,
     ) -> tuple:
+        if append_user_message:
+            self.store.append_message(
+                role="user",
+                author="Founder",
+                module=module,
+                content=prompt,
+            )
+
         active_agent = self._select_agent(module, prompt)
-        app_id = explicit_app_id or self._pick_app_id(prompt, module)
-        memory_hits = self.store.search_memory(prompt, selected_artifact_id=selected_artifact_id)
-        skill_ids = self._infer_skill_ids(prompt, module, app_id)
-        executions = self._execute_skills(
-            skill_ids=skill_ids,
-            founder_prompt=prompt,
-            memory_hits=memory_hits,
-            selected_artifact_id=selected_artifact_id,
-        )
-
-        task_module = ModuleKey.APPS if explicit_app_id else module
         task = self.store.add_task_run(
-            title=(self.store.get_app(app_id).title if app_id and explicit_app_id else f"{active_agent.name.replace('Agent', '')} thread run"),
-            module=task_module,
+            title=self.store.get_app(explicit_app_id).title if explicit_app_id else f"{active_agent.name.replace('Agent', '')} thread run",
+            module=ModuleKey.APPS if explicit_app_id else module,
             owner_agent_id=active_agent.id,
-            progress_label=f"Executed {len(executions)} skill(s) from the thread",
-            trace_summary=(
-                f"{active_agent.name} retrieved {len(memory_hits)} memory item(s), "
-                f"ran {', '.join(execution.title for execution in executions)}, and saved a durable output."
-            ),
-            outputs=[execution.artifact_title for execution in executions],
-            requires_approval=module in {ModuleKey.CAPITAL, ModuleKey.EXECUTION},
-            status=TaskStatus.WAITING if module in {ModuleKey.CAPITAL, ModuleKey.EXECUTION} else TaskStatus.COMPLETED,
+            progress_label="Reasoning through the founder request",
+            trace_summary="Execution session opened from the founder thread.",
+            outputs=[],
+            requires_approval=False,
+            status=TaskStatus.RUNNING,
+        )
+        execution_session = self.store.create_thread_execution(
+            module=ModuleKey.APPS if explicit_app_id else module,
+            prompt=prompt,
+            agent_id=active_agent.id,
+            selected_artifact_id=selected_artifact_id,
+            task_run_id=task.id,
         )
 
-        artifact = self._compose_artifact(
+        reply_content, memory_hits, executions, tool_calls, app_id, artifact = self._run_thread_runtime(
+            module=ModuleKey.APPS if explicit_app_id else module,
+            prompt=prompt,
+            active_agent=active_agent,
+            selected_artifact_id=selected_artifact_id,
             task=task,
-            module=task_module,
-            app_id=app_id,
-            executions=executions,
+            execution_session=execution_session,
+            explicit_app_id=explicit_app_id,
         )
-        reply_content = self._reply_content(
+
+        task = self._complete_task(
+            task=task,
+            module=ModuleKey.APPS if explicit_app_id else module,
+            active_agent_id=active_agent.name,
+            memory_hits=memory_hits,
+            executions=executions,
+            tool_calls=tool_calls,
+            artifact=artifact,
+            app_id=app_id,
+        )
+        execution_summary = (
+            f"Used {len(tool_calls)} tool call(s), {len(executions)} skill execution(s), and "
+            f"{'saved ' + artifact.title if artifact else 'kept the result in thread'}."
+        )
+        final_reply = reply_content or self._reply_content(
             prompt=prompt,
             active_agent_name=active_agent.name,
             active_agent_role=active_agent.role,
-            module=module,
+            module=ModuleKey.APPS if explicit_app_id else module,
             artifact=artifact,
             memory_hits=memory_hits,
             executions=executions,
             app_id=app_id,
+            execution_summary=execution_summary,
         )
-        return active_agent, memory_hits, executions, task, artifact, reply_content, app_id
+        next_actions = self._next_actions(app_id, executions, tool_calls)
+        execution_session = self.store.update_thread_execution(
+            execution_session.id,
+            status=task.status.value,
+            summary=execution_summary,
+            app_id=app_id,
+            response_excerpt=final_reply[:500],
+            output_artifact_ids=[artifact.id] if artifact else [],
+            tool_calls=tool_calls,
+        )
+        nodes = self._build_nodes(
+            task=task,
+            artifact=artifact,
+            executions=executions,
+            app_id=app_id,
+            execution_session=execution_session,
+            tool_calls=tool_calls,
+        )
+        reply = self.store.append_message(
+            role="assistant",
+            author=active_agent.name,
+            module=ModuleKey.APPS if explicit_app_id else module,
+            content=final_reply,
+            nodes=nodes,
+            memory_hits=memory_hits,
+            next_actions=next_actions,
+        )
+        execution_session = self.store.update_thread_execution(
+            execution_session.id,
+            message_id=reply.id,
+            status=task.status.value,
+            summary=execution_summary,
+            app_id=app_id,
+            response_excerpt=final_reply[:500],
+            output_artifact_ids=[artifact.id] if artifact else [],
+            tool_calls=tool_calls,
+        )
+
+        return active_agent, memory_hits, executions, task, artifact, reply, app_id, next_actions, nodes, execution_session
 
     def respond(self, request: ChatRequest) -> ChatResponse:
-        self.store.append_message(
-            role="user",
-            author="Founder",
-            module=request.module,
-            content=request.message,
-        )
-
         (
             active_agent,
             memory_hits,
             executions,
             task,
             artifact,
-            reply_content,
+            reply,
             app_id,
-        ) = self._run_thread_flow(
+            next_actions,
+            nodes,
+            execution_session,
+        ) = self._run_turn(
             module=request.module,
             prompt=request.message,
             selected_artifact_id=request.selected_artifact_id,
-        )
-
-        next_actions = self._next_actions(app_id, executions)
-        nodes = self._build_nodes(task=task, artifact=artifact, executions=executions, app_id=app_id)
-        reply = self.store.append_message(
-            role="assistant",
-            author=active_agent.name,
-            module=request.module,
-            content=reply_content,
-            nodes=nodes,
-            memory_hits=memory_hits,
-            next_actions=next_actions,
+            append_user_message=True,
         )
 
         return ChatResponse(
             reply=reply,
             active_agent=active_agent,
             task_run=task,
-            artifact=artifact,
+            artifact=artifact or self.store.artifacts[0],
             suggestions=[
                 "Keep the thread going instead of opening a new chat.",
-                "Open the artifact if you need a deep edit.",
-                "Use an app only when the thread needs a richer workspace.",
+                "Open the output node if you need a deeper working panel.",
+                "Ask the workspace to launch an app only when the thread needs heavier execution.",
             ],
             routed_module=active_agent.module,
             context_items=[f"{item.title}: {item.summary}" for item in memory_hits],
             next_actions=next_actions,
             nodes=nodes,
             memory_hits=memory_hits,
+            thread_execution=execution_session,
             launched_app_id=app_id,
             updated_metrics=self.store.metrics(),
         )
@@ -469,16 +629,17 @@ class FounderOrchestrator:
             _executions,
             task,
             artifact,
-            _reply_content,
-            resolved_app_id,
-        ) = self._run_thread_flow(
+            _reply,
+            _app_id,
+            _next_actions,
+            _nodes,
+            _execution_session,
+        ) = self._run_turn(
             module=ModuleKey.APPS,
             prompt=request.prompt,
             explicit_app_id=app_id,
+            append_user_message=False,
         )
-        if resolved_app_id:
-            self.store.get_app(resolved_app_id).last_run_at = task.created_at
-            self.store.persist()
         return ActionResponse(
             task_run=task,
             artifact=artifact,
@@ -500,11 +661,15 @@ class FounderOrchestrator:
             _executions,
             task,
             artifact,
-            _reply_content,
+            _reply,
             _app_id,
-        ) = self._run_thread_flow(
+            _next_actions,
+            _nodes,
+            _execution_session,
+        ) = self._run_turn(
             module=workflow.module,
             prompt=f"{workflow.title}: {request.note}",
+            append_user_message=False,
         )
         task.title = workflow.title
         task.outputs = workflow.outputs

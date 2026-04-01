@@ -79,6 +79,7 @@ function App() {
 
   const [selectedArtifactId, setSelectedArtifactId] = useState("");
   const [selectedAppId, setSelectedAppId] = useState("");
+  const [selectedExecutionId, setSelectedExecutionId] = useState("");
 
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [loginForm, setLoginForm] = useState({
@@ -94,7 +95,7 @@ function App() {
     summary: "",
   });
 
-  const loadWorkspace = async (options?: { artifactId?: string; appId?: string }) => {
+  const loadWorkspace = async (options?: { artifactId?: string; appId?: string; executionId?: string }) => {
     const [bootstrap, latestUploads] = await Promise.all([fetchBootstrap(), fetchUploads()]);
     setData(bootstrap);
     setUploads(latestUploads);
@@ -115,6 +116,15 @@ function App() {
     if (nextApp) {
       setSelectedAppId(nextApp.id);
       setAppPrompt((current) => current || `Run ${nextApp.title.toLowerCase()} on the latest workspace context.`);
+    }
+
+    const nextExecution =
+      bootstrap.thread_executions.find((execution) => execution.id === options?.executionId) ??
+      bootstrap.thread_executions.find((execution) => execution.app_id === options?.appId) ??
+      bootstrap.thread_executions.find((execution) => execution.id === selectedExecutionId) ??
+      bootstrap.thread_executions[0];
+    if (nextExecution) {
+      setSelectedExecutionId(nextExecution.id);
     }
 
     setWorkspaceForm({
@@ -172,13 +182,11 @@ function App() {
     data?.artifacts.find((artifact) => artifact.id === selectedArtifactId) ?? data?.artifacts[0] ?? null;
   const selectedApp =
     data?.apps.find((app) => app.id === selectedAppId) ?? data?.apps.find((app) => app.featured) ?? data?.apps[0] ?? null;
-  const selectedAppRun =
-    data?.task_runs.find(
-      (task) =>
-        task.module === "apps" &&
-        selectedApp &&
-        task.title.toLowerCase().includes(selectedApp.title.toLowerCase()),
-    ) ?? null;
+  const selectedExecution =
+    data?.thread_executions.find((execution) => execution.id === selectedExecutionId) ??
+    (selectedApp ? data?.thread_executions.find((execution) => execution.app_id === selectedApp.id) : null) ??
+    data?.thread_executions[0] ??
+    null;
 
   const sidecarItems = useMemo(() => {
     const seen = new Set<string>();
@@ -248,6 +256,7 @@ function App() {
       await loadWorkspace({
         artifactId: response.artifact.id,
         appId: response.launched_app_id ?? undefined,
+        executionId: response.thread_execution?.id ?? undefined,
       });
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : "Unable to send message");
@@ -304,6 +313,9 @@ function App() {
       setError(null);
       const response = await launchApp(selectedApp.id, appPrompt.trim());
       setSelectedArtifactId(response.artifact?.id ?? selectedArtifactId);
+      if (response.task_run.id) {
+        setSelectedExecutionId((data?.thread_executions.find((execution) => execution.task_run_id === response.task_run.id)?.id) ?? "");
+      }
       setPanel("app");
       setNotice(response.message);
       await loadWorkspace({
@@ -348,6 +360,12 @@ function App() {
   };
 
   const handleNodeAction = (node: ThreadNode) => {
+    const linkedExecution = node.thread_execution_id
+      ? data?.thread_executions.find((execution) => execution.id === node.thread_execution_id) ?? null
+      : null;
+    if (node.thread_execution_id) {
+      setSelectedExecutionId(node.thread_execution_id);
+    }
     if (node.artifact_id) {
       setSelectedArtifactId(node.artifact_id);
       setPanel("artifact");
@@ -358,8 +376,17 @@ function App() {
       setPanel("app");
       return;
     }
+    if (linkedExecution?.app_id) {
+      setSelectedAppId(linkedExecution.app_id);
+      setPanel("app");
+      return;
+    }
     if (node.task_run_id && node.kind === "approval") {
       setPanel("workspace");
+      return;
+    }
+    if (node.kind === "run") {
+      setPanel(linkedExecution ? "app" : "workspace");
     }
   };
 
@@ -759,11 +786,48 @@ function App() {
                     </div>
                   ))}
                 </div>
-                {selectedAppRun ? (
-                  <div className="panel-run-summary">
-                    <strong>{selectedAppRun.title}</strong>
-                    <p>{selectedAppRun.trace_summary}</p>
-                  </div>
+                {selectedExecution ? (
+                  <>
+                    <div className="panel-run-summary">
+                      <strong>{selectedExecution.summary}</strong>
+                      <p>{selectedExecution.prompt}</p>
+                    </div>
+                    {selectedExecution.output_artifact_ids.length ? (
+                      <div className="mini-list">
+                        {selectedExecution.output_artifact_ids.map((artifactId) => {
+                          const artifact = data?.artifacts.find((item) => item.id === artifactId);
+                          if (!artifact) {
+                            return null;
+                          }
+                          return (
+                            <button
+                              key={artifactId}
+                              className="mini-record mini-record-button"
+                              onClick={() => {
+                                setSelectedArtifactId(artifactId);
+                                setPanel("artifact");
+                              }}
+                            >
+                              <strong>{artifact.title}</strong>
+                              <span>{artifact.summary}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                    <div className="mini-list">
+                      {selectedExecution.tool_calls.map((toolCall) => (
+                        <div key={toolCall.id} className="mini-record">
+                          <strong>{toolCall.name.replaceAll("_", " ")}</strong>
+                          <span>{toolCall.summary}</span>
+                          <div className="tool-call-preview">
+                            <p>{toolCall.input_preview}</p>
+                            <MarkdownRenderer content={toolCall.output_preview} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 ) : null}
                 <div className="panel-actions">
                   <button className="button-primary" onClick={() => void handleLaunchApp()} disabled={isLaunchingApp}>

@@ -27,6 +27,8 @@ from .models import (
     SkillDefinition,
     TaskRun,
     TaskStatus,
+    ThreadExecutionSession,
+    ToolCallRecord,
     WorkflowDefinition,
     Workspace,
     WorkspaceApp,
@@ -46,6 +48,14 @@ def _task_id() -> str:
 
 def _message_id() -> str:
     return f"msg-{uuid4().hex[:8]}"
+
+
+def _thread_execution_id() -> str:
+    return f"threadexec-{uuid4().hex[:8]}"
+
+
+def _tool_call_id() -> str:
+    return f"toolcall-{uuid4().hex[:8]}"
 
 
 def _entity_id(prefix: str) -> str:
@@ -451,6 +461,7 @@ class DemoStore:
             content="""## Welcome to VXV Workspace\n\nI can coordinate strategy, team leverage, execution rhythms, artifact production, and fundraising prep from one place.\n\nTry asking for:\n- a founder weekly review\n- a GTM experiment plan\n- an investor memo refresh\n""",
         )
     ])
+    thread_executions: List[ThreadExecutionSession] = field(default_factory=list)
     disable_persistence: bool = field(default_factory=lambda: os.getenv("VXV_DISABLE_PERSISTENCE") == "1")
 
     def __post_init__(self) -> None:
@@ -477,6 +488,9 @@ class DemoStore:
         self.fundraise_pipeline = FundraisePipeline.model_validate(payload["fundraise_pipeline"])
         self.investor_room = InvestorRoom.model_validate(payload["investor_room"])
         self.messages = [ChatMessage.model_validate(item) for item in payload["messages"]]
+        self.thread_executions = [
+            ThreadExecutionSession.model_validate(item) for item in payload.get("thread_executions", [])
+        ]
 
     def persist(self) -> None:
         if self.disable_persistence:
@@ -495,6 +509,7 @@ class DemoStore:
             "fundraise_pipeline": self.fundraise_pipeline.model_dump(),
             "investor_room": self.investor_room.model_dump(),
             "messages": [item.model_dump() for item in self.messages],
+            "thread_executions": [item.model_dump() for item in self.thread_executions],
         }
         self.persistence.save_state(self.workspace.id, json.dumps(payload, indent=2))
 
@@ -703,6 +718,7 @@ class DemoStore:
             investor_room=self.investor_room,
             messages=self.messages,
             memory_items=self.memory_items(),
+            thread_executions=self.thread_executions,
             integrations=detect_runtime_capabilities().to_model(),
             metrics=self.metrics(),
         )
@@ -758,6 +774,97 @@ class DemoStore:
         self.artifacts.insert(0, artifact)
         self.persist()
         return artifact
+
+    def create_thread_execution(
+        self,
+        *,
+        module: ModuleKey,
+        prompt: str,
+        agent_id: str,
+        selected_artifact_id: str | None,
+        task_run_id: str | None = None,
+    ) -> ThreadExecutionSession:
+        execution = ThreadExecutionSession(
+            id=_thread_execution_id(),
+            thread_id="thread-primary",
+            module=module,
+            prompt=prompt,
+            status="running",
+            agent_id=agent_id,
+            created_at=now_iso(),
+            updated_at=now_iso(),
+            summary="Execution started from the founder thread.",
+            selected_artifact_id=selected_artifact_id,
+            task_run_id=task_run_id,
+        )
+        self.thread_executions.insert(0, execution)
+        self.persist()
+        return execution
+
+    def get_thread_execution(self, execution_id: str) -> ThreadExecutionSession:
+        execution = next((item for item in self.thread_executions if item.id == execution_id), None)
+        if execution is None:
+            raise KeyError(f"Unknown thread execution: {execution_id}")
+        return execution
+
+    def latest_thread_execution_for_app(self, app_id: str) -> ThreadExecutionSession | None:
+        return next((item for item in self.thread_executions if item.app_id == app_id), None)
+
+    def update_thread_execution(
+        self,
+        execution_id: str,
+        *,
+        message_id: str | None = None,
+        status: str | None = None,
+        summary: str | None = None,
+        app_id: str | None = None,
+        response_excerpt: str | None = None,
+        output_artifact_ids: List[str] | None = None,
+        tool_calls: List[ToolCallRecord] | None = None,
+    ) -> ThreadExecutionSession:
+        execution = self.get_thread_execution(execution_id)
+        if message_id is not None:
+            execution.message_id = message_id
+        if status is not None:
+            execution.status = status
+        if summary is not None:
+            execution.summary = summary
+        if app_id is not None:
+            execution.app_id = app_id
+        if response_excerpt is not None:
+            execution.response_excerpt = response_excerpt
+        if output_artifact_ids is not None:
+            execution.output_artifact_ids = list(output_artifact_ids)
+        if tool_calls is not None:
+            execution.tool_calls = list(tool_calls)
+        execution.updated_at = now_iso()
+        self.persist()
+        return execution
+
+    def build_tool_call_record(
+        self,
+        *,
+        name: str,
+        status: str,
+        summary: str,
+        input_preview: str,
+        output_preview: str,
+        artifact_id: str | None = None,
+        app_id: str | None = None,
+        skill_id: str | None = None,
+    ) -> ToolCallRecord:
+        return ToolCallRecord(
+            id=_tool_call_id(),
+            name=name,
+            status=status,
+            summary=summary,
+            input_preview=input_preview[:600],
+            output_preview=output_preview[:1200],
+            created_at=now_iso(),
+            artifact_id=artifact_id,
+            app_id=app_id,
+            skill_id=skill_id,
+        )
 
     def add_task_run(
         self,
