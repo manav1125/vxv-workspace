@@ -185,6 +185,7 @@ class InvestorRoom(BaseModel):
 
 class ChatMessage(BaseModel):
     id: str
+    thread_id: str = "thread-primary"
     role: str
     author: str
     module: ModuleKey
@@ -227,6 +228,15 @@ class ThreadExecutionSession(BaseModel):
     response_excerpt: Optional[str] = None
 
 
+class ChatThread(BaseModel):
+    id: str
+    title: str
+    created_at: str
+    updated_at: str
+    message_count: int = 0
+    last_message_preview: Optional[str] = None
+
+
 class ThreadNode(BaseModel):
     id: str
     kind: str
@@ -256,6 +266,29 @@ class SkillDefinition(BaseModel):
     name: str
     summary: str
     capability_type: str
+    enabled: bool = True
+
+
+class ToolDefinition(BaseModel):
+    id: str
+    name: str
+    summary: str
+    category: str
+    source: str
+    enabled: bool = True
+
+
+class MCPConnector(BaseModel):
+    id: str
+    name: str
+    transport: str = "sse"
+    url: Optional[str] = None
+    command: Optional[str] = None
+    args: List[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    enabled: bool = True
+    created_at: str
+    updated_at: str
 
 
 class WorkspaceApp(BaseModel):
@@ -277,6 +310,8 @@ class IntegrationStatus(BaseModel):
     reme_available: bool
     runtime_target: str
     mode: str
+    mcp_server_count: int = 0
+    mcp_server_names: List[str] = Field(default_factory=list)
     runtime_provider: Optional[str] = None
     runtime_reason: Optional[str] = None
 
@@ -293,6 +328,7 @@ class BootstrapResponse(BaseModel):
     goals: List[Goal]
     agents: List[AgentProfile]
     skills: List[SkillDefinition]
+    tool_catalog: List[ToolDefinition]
     apps: List[WorkspaceApp]
     knowledge_sources: List[KnowledgeSource]
     contacts: List[Contact]
@@ -302,6 +338,9 @@ class BootstrapResponse(BaseModel):
     fundraise_pipeline: FundraisePipeline
     investor_room: InvestorRoom
     messages: List[ChatMessage]
+    threads: List[ChatThread]
+    active_thread_id: str
+    mcp_connectors: List[MCPConnector] = Field(default_factory=list)
     memory_items: List[MemoryItem]
     thread_executions: List[ThreadExecutionSession]
     integrations: IntegrationStatus
@@ -312,6 +351,7 @@ class ChatRequest(BaseModel):
     module: ModuleKey
     message: str = Field(min_length=1, max_length=4000)
     selected_artifact_id: Optional[str] = None
+    thread_id: Optional[str] = None
 
 
 class WorkspaceSetupRequest(BaseModel):
@@ -399,6 +439,38 @@ class WorkspaceUserUpdateRequest(BaseModel):
     role: Optional[str] = Field(default=None, min_length=1, max_length=60)
     status: Optional[str] = Field(default=None, min_length=1, max_length=60)
     password: Optional[str] = Field(default=None, min_length=8, max_length=200)
+
+
+class ThreadCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=140)
+
+
+class SkillToggleRequest(BaseModel):
+    enabled: bool
+
+
+class ToolToggleRequest(BaseModel):
+    enabled: bool
+
+
+class MCPConnectorCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    transport: str = Field(default="sse", min_length=1, max_length=20)
+    url: Optional[str] = Field(default=None, max_length=1000)
+    command: Optional[str] = Field(default=None, max_length=200)
+    args: List[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    enabled: bool = True
+
+
+class MCPConnectorUpdateRequest(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    transport: Optional[str] = Field(default=None, min_length=1, max_length=20)
+    url: Optional[str] = Field(default=None, max_length=1000)
+    command: Optional[str] = Field(default=None, max_length=200)
+    args: Optional[List[str]] = None
+    env: Optional[dict[str, str]] = None
+    enabled: Optional[bool] = None
 
 
 class ChatResponse(BaseModel):

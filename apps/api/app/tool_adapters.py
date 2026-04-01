@@ -14,11 +14,14 @@ from .store import DemoStore
 @dataclass
 class ThreadToolContext:
     execution_id: str
+    thread_id: str
     founder_prompt: str
     module: ModuleKey
     active_agent_id: str
     task_run_id: str
     selected_artifact_id: Optional[str] = None
+    enabled_skill_ids: set[str] = field(default_factory=set)
+    enabled_tool_names: set[str] = field(default_factory=set)
     memory_hits: list[MemoryItem] = field(default_factory=list)
     tool_calls: list[ToolCallRecord] = field(default_factory=list)
     skill_executions: list[SkillExecution] = field(default_factory=list)
@@ -35,11 +38,16 @@ class ThreadToolAdapters:
 
     def build_toolkit(self) -> ServiceToolkit:
         toolkit = ServiceToolkit()
-        toolkit.add(self.retrieve_workspace_memory)
-        toolkit.add(self.inspect_selected_artifact)
-        toolkit.add(self.run_workspace_skill)
-        toolkit.add(self.launch_workspace_app)
-        toolkit.add(self.publish_to_investor_room)
+        if "retrieve_workspace_memory" in self.context.enabled_tool_names:
+            toolkit.add(self.retrieve_workspace_memory)
+        if "inspect_selected_artifact" in self.context.enabled_tool_names:
+            toolkit.add(self.inspect_selected_artifact)
+        if "run_workspace_skill" in self.context.enabled_tool_names:
+            toolkit.add(self.run_workspace_skill)
+        if "launch_workspace_app" in self.context.enabled_tool_names:
+            toolkit.add(self.launch_workspace_app)
+        if "publish_to_investor_room" in self.context.enabled_tool_names:
+            toolkit.add(self.publish_to_investor_room)
         server_config = self._load_mcp_server_config()
         if server_config:
             toolkit.add_mcp_servers(server_config)
@@ -52,7 +60,11 @@ class ThreadToolAdapters:
             query: Natural-language search query for the current founder request.
         """
 
-        hits = self.store.search_memory(query, selected_artifact_id=self.context.selected_artifact_id)
+        hits = self.store.search_memory(
+            query,
+            selected_artifact_id=self.context.selected_artifact_id,
+            thread_id=self.context.thread_id,
+        )
         self.context.memory_hits = self._merge_memory_hits(hits)
         content = "\n".join(f"- {item.title}: {item.summary}" for item in hits[:6]) or "- No relevant memory found."
         self._record_tool_call(
@@ -95,17 +107,30 @@ class ThreadToolAdapters:
             objective: The concrete work objective for this skill.
         """
 
+        if self.context.enabled_skill_ids and skill_id not in self.context.enabled_skill_ids:
+            response_text = f"Skill `{skill_id}` is disabled in workspace settings."
+            self._record_tool_call(
+                name="run_workspace_skill",
+                summary=response_text,
+                input_preview=f"{skill_id}\n\n{objective}",
+                output_preview=response_text,
+                skill_id=skill_id,
+            )
+            return ServiceResponse(status=ServiceExecStatus.ERROR, content=response_text)
         execution = self.skill_engine.run(
             skill_id=skill_id,
             founder_prompt=objective,
-            memory_hits=self.context.memory_hits or self.store.search_memory(
+            memory_hits=self.context.memory_hits
+            or self.store.search_memory(
                 objective,
                 selected_artifact_id=self.context.selected_artifact_id,
+                thread_id=self.context.thread_id,
             ),
             workspace_name=self.store.workspace.company_name,
             founder_name=self.store.workspace.founder_name,
             selected_artifact_content=self._selected_artifact_content(),
         )
+
         self.context.skill_executions.append(execution)
         preview = execution.body[:2000]
         self._record_tool_call(
@@ -126,8 +151,11 @@ class ThreadToolAdapters:
         """
 
         app = self.store.get_app(app_id)
+        enabled_skill_ids = self.context.enabled_skill_ids or {skill.id for skill in self.store.skills}
         executions: list[SkillExecution] = []
         for skill_id in app.skill_ids:
+            if skill_id not in enabled_skill_ids:
+                continue
             executions.append(
                 self.skill_engine.run(
                     skill_id=skill_id,
@@ -135,12 +163,23 @@ class ThreadToolAdapters:
                     memory_hits=self.context.memory_hits or self.store.search_memory(
                         objective,
                         selected_artifact_id=self.context.selected_artifact_id,
+                        thread_id=self.context.thread_id,
                     ),
                     workspace_name=self.store.workspace.company_name,
                     founder_name=self.store.workspace.founder_name,
                     selected_artifact_content=self._selected_artifact_content(),
                 )
             )
+        if not executions:
+            response_text = f"{app.title} cannot run because all linked skills are disabled."
+            self._record_tool_call(
+                name="launch_workspace_app",
+                summary=response_text,
+                input_preview=f"{app_id}\n\n{objective}",
+                output_preview=response_text,
+                app_id=app.id,
+            )
+            return ServiceResponse(status=ServiceExecStatus.ERROR, content=response_text)
 
         content = "\n\n".join(
             [f"# {app.title} Output"]
@@ -274,4 +313,16 @@ class ThreadToolAdapters:
         )
 
     def _load_mcp_server_config(self) -> dict | None:
-        return load_mcp_server_config()
+        base = load_mcp_server_config() or {}
+        dynamic = self.store.enabled_mcp_server_config()
+        merged_servers: dict[str, dict] = {}
+        if isinstance(base, dict):
+            if isinstance(base.get("mcpServers"), dict):
+                merged_servers.update(base.get("mcpServers", {}))
+            else:
+                merged_servers.update({k: v for k, v in base.items() if isinstance(v, dict)})
+        if isinstance(dynamic, dict) and isinstance(dynamic.get("mcpServers"), dict):
+            merged_servers.update(dynamic["mcpServers"])
+        if not merged_servers:
+            return None
+        return {"mcpServers": merged_servers}

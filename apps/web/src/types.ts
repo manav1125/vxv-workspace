@@ -124,6 +124,7 @@ export interface InvestorRoom {
 
 export interface ChatMessage {
   id: string;
+  thread_id: string;
   role: "user" | "assistant";
   author: string;
   module: ModuleKey;
@@ -179,6 +180,16 @@ export interface SkillDefinition {
   name: string;
   summary: string;
   capability_type: string;
+  enabled: boolean;
+}
+
+export interface ToolDefinition {
+  id: string;
+  name: string;
+  summary: string;
+  category: string;
+  source: string;
+  enabled: boolean;
 }
 
 export interface WorkspaceApp {
@@ -194,12 +205,36 @@ export interface WorkspaceApp {
   featured: boolean;
 }
 
+export interface ChatThread {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+  last_message_preview?: string | null;
+}
+
+export interface MCPConnector {
+  id: string;
+  name: string;
+  transport: string;
+  url?: string | null;
+  command?: string | null;
+  args: string[];
+  env: Record<string, string>;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface IntegrationStatus {
   agentscope_python_available: boolean;
   agentscope_configured: boolean;
   reme_available: boolean;
   runtime_target: string;
   mode: string;
+  mcp_server_count: number;
+  mcp_server_names: string[];
   runtime_provider?: string | null;
   runtime_reason?: string | null;
 }
@@ -255,6 +290,7 @@ export interface BootstrapResponse {
   goals: Goal[];
   agents: AgentProfile[];
   skills: SkillDefinition[];
+  tool_catalog: ToolDefinition[];
   apps: WorkspaceApp[];
   knowledge_sources: KnowledgeSource[];
   contacts: Contact[];
@@ -264,16 +300,20 @@ export interface BootstrapResponse {
   fundraise_pipeline: FundraisePipeline;
   investor_room: InvestorRoom;
   messages: ChatMessage[];
+  threads: ChatThread[];
+  active_thread_id: string;
   memory_items: MemoryItem[];
   thread_executions: ThreadExecutionSession[];
   integrations: IntegrationStatus;
   metrics: DashboardMetrics;
+  mcp_connectors?: MCPConnector[];
 }
 
 export interface ChatRequest {
   module: ModuleKey;
   message: string;
   selected_artifact_id?: string;
+  thread_id?: string;
 }
 
 export interface ChatResponse {

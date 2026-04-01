@@ -14,6 +14,7 @@ from .models import (
     Artifact,
     ArtifactKind,
     BootstrapResponse,
+    ChatThread,
     ChatMessage,
     Contact,
     DashboardMetrics,
@@ -24,6 +25,7 @@ from .models import (
     KnowledgeSource,
     MemoryItem,
     ModuleKey,
+    MCPConnector,
     SkillDefinition,
     TaskRun,
     TaskStatus,
@@ -61,6 +63,10 @@ def _tool_call_id() -> str:
 
 def _entity_id(prefix: str) -> str:
     return f"{prefix}-{uuid4().hex[:8]}"
+
+
+def _thread_id() -> str:
+    return f"thread-{uuid4().hex[:8]}"
 
 
 @dataclass
@@ -472,6 +478,7 @@ class DemoStore:
     messages: List[ChatMessage] = field(default_factory=lambda: [
         ChatMessage(
             id="msg-1",
+            thread_id="thread-primary",
             role="assistant",
             author="ChiefOfStaffAgent",
             module=ModuleKey.INBOX,
@@ -479,6 +486,19 @@ class DemoStore:
             content="""## Welcome to VXV Workspace\n\nI can coordinate strategy, team leverage, execution rhythms, artifact production, and fundraising prep from one place.\n\nTry asking for:\n- a founder weekly review\n- a GTM experiment plan\n- an investor memo refresh\n""",
         )
     ])
+    threads: List[ChatThread] = field(default_factory=lambda: [
+        ChatThread(
+            id="thread-primary",
+            title="Primary thread",
+            created_at="2026-03-31T07:00:00Z",
+            updated_at="2026-03-31T07:10:00Z",
+            message_count=1,
+            last_message_preview="Welcome to VXV Workspace",
+        )
+    ])
+    active_thread_id: str = "thread-primary"
+    tool_enabled_overrides: dict[str, bool] = field(default_factory=dict)
+    mcp_connectors: List[MCPConnector] = field(default_factory=list)
     thread_executions: List[ThreadExecutionSession] = field(default_factory=list)
     disable_persistence: bool = field(default_factory=lambda: os.getenv("VXV_DISABLE_PERSISTENCE") == "1")
 
@@ -508,6 +528,24 @@ class DemoStore:
         self.fundraise_pipeline = FundraisePipeline.model_validate(payload["fundraise_pipeline"])
         self.investor_room = InvestorRoom.model_validate(payload["investor_room"])
         self.messages = [ChatMessage.model_validate(item) for item in payload["messages"]]
+        self.threads = [ChatThread.model_validate(item) for item in payload.get("threads", [])]
+        if not self.threads:
+            self.threads = [
+                ChatThread(
+                    id="thread-primary",
+                    title="Primary thread",
+                    created_at=now_iso(),
+                    updated_at=now_iso(),
+                    message_count=len(self.messages),
+                    last_message_preview=self.messages[-1].content[:120] if self.messages else None,
+                )
+            ]
+        self.active_thread_id = payload.get("active_thread_id") or self.threads[0].id
+        self.tool_enabled_overrides = {
+            str(key): bool(value)
+            for key, value in (payload.get("tool_enabled_overrides") or {}).items()
+        }
+        self.mcp_connectors = [MCPConnector.model_validate(item) for item in payload.get("mcp_connectors", [])]
         self.thread_executions = [
             ThreadExecutionSession.model_validate(item) for item in payload.get("thread_executions", [])
         ]
@@ -518,6 +556,7 @@ class DemoStore:
         self.skills = self._merge_by_id(self.skills, seed.skills)
         self.apps = self._merge_by_id(self.apps, seed.apps)
         self.workflows = self._merge_by_id(self.workflows, seed.workflows)
+        self._ensure_threads_present()
 
     @staticmethod
     def _merge_by_id(existing: list, seeded: list) -> list:
@@ -545,9 +584,48 @@ class DemoStore:
             "fundraise_pipeline": self.fundraise_pipeline.model_dump(),
             "investor_room": self.investor_room.model_dump(),
             "messages": [item.model_dump() for item in self.messages],
+            "threads": [item.model_dump() for item in self.threads],
+            "active_thread_id": self.active_thread_id,
+            "tool_enabled_overrides": self.tool_enabled_overrides,
+            "mcp_connectors": [item.model_dump() for item in self.mcp_connectors],
             "thread_executions": [item.model_dump() for item in self.thread_executions],
         }
         self.persistence.save_state(self.workspace.id, json.dumps(payload, indent=2))
+
+    def _ensure_threads_present(self) -> None:
+        if not self.threads:
+            created_at = now_iso()
+            self.threads = [
+                ChatThread(
+                    id="thread-primary",
+                    title="Primary thread",
+                    created_at=created_at,
+                    updated_at=created_at,
+                    message_count=0,
+                    last_message_preview=None,
+                )
+            ]
+        known_ids = {thread.id for thread in self.threads}
+        if self.active_thread_id not in known_ids:
+            self.active_thread_id = self.threads[0].id
+        for message in self.messages:
+            if not getattr(message, "thread_id", None) or message.thread_id not in known_ids:
+                message.thread_id = self.active_thread_id
+        self._refresh_thread_stats()
+
+    def _refresh_thread_stats(self) -> None:
+        messages_by_thread: dict[str, list[ChatMessage]] = {thread.id: [] for thread in self.threads}
+        for message in self.messages:
+            messages_by_thread.setdefault(message.thread_id, []).append(message)
+        for thread in self.threads:
+            thread_messages = messages_by_thread.get(thread.id, [])
+            thread.message_count = len(thread_messages)
+            if thread_messages:
+                last_message = thread_messages[-1]
+                thread.updated_at = last_message.created_at
+                thread.last_message_preview = last_message.content[:140]
+            elif not thread.updated_at:
+                thread.updated_at = thread.created_at
 
     def metrics(self) -> DashboardMetrics:
         return DashboardMetrics(
@@ -613,6 +691,7 @@ class DemoStore:
         *,
         limit: int = 6,
         selected_artifact_id: str | None = None,
+        thread_id: str | None = None,
     ) -> list[MemoryItem]:
         stopwords = {
             "build",
@@ -732,6 +811,9 @@ class DemoStore:
             )
             for investor in self.fundraise_pipeline.investors
         )
+        thread_messages = self.messages
+        if thread_id:
+            thread_messages = [message for message in self.messages if message.thread_id == thread_id]
         thread_documents = [
             (
                 MemoryItem(
@@ -744,7 +826,7 @@ class DemoStore:
                 ),
                 message.content[:1500],
             )
-            for message in self.messages[-6:]
+            for message in thread_messages[-6:]
         ]
 
         def score(item: tuple[MemoryItem, str]) -> tuple[int, int]:
@@ -768,6 +850,12 @@ class DemoStore:
         return (ranked_non_threads[: max(0, limit - 1)] + [item[0] for item in ranked_threads[:1]])[:limit]
 
     def bootstrap(self) -> BootstrapResponse:
+        self._refresh_thread_stats()
+        integrations = detect_runtime_capabilities().to_model()
+        dynamic_names = sorted(connector.name for connector in self.mcp_connectors if connector.enabled)
+        merged_names = sorted({*integrations.mcp_server_names, *dynamic_names})
+        integrations.mcp_server_names = merged_names
+        integrations.mcp_server_count = len(merged_names)
         return BootstrapResponse(
             workspace=self.workspace,
             goals=self.goals,
@@ -783,9 +871,12 @@ class DemoStore:
             fundraise_pipeline=self.fundraise_pipeline,
             investor_room=self.investor_room,
             messages=self.messages,
+            threads=self.threads,
+            active_thread_id=self.active_thread_id,
+            mcp_connectors=self.mcp_connectors,
             memory_items=self.memory_items(),
             thread_executions=self.thread_executions,
-            integrations=detect_runtime_capabilities().to_model(),
+            integrations=integrations,
             metrics=self.metrics(),
         )
 
@@ -827,20 +918,36 @@ class DemoStore:
                 source="builtin",
             ),
         ]
+        for tool in builtins:
+            if tool.name in self.tool_enabled_overrides:
+                tool.enabled = bool(self.tool_enabled_overrides[tool.name])
 
         integrations = detect_runtime_capabilities()
-        mcp_tools = [
+        dynamic_connector_tools = [
             ToolDefinition(
-                id=f"tool-mcp-{name}",
+                id=f"tool-mcp-{connector.id}",
+                name=connector.name,
+                summary=f"MCP connector via {connector.transport}.",
+                category="mcp",
+                source="mcp",
+                enabled=connector.enabled,
+            )
+            for connector in self.mcp_connectors
+        ]
+        env_connector_tools = [
+            ToolDefinition(
+                id=f"tool-mcp-env-{name}",
                 name=name,
                 summary="Connected MCP server available to AgentScope chat runs.",
                 category="mcp",
                 source="mcp",
+                enabled=True,
             )
             for name in integrations.mcp_server_names
+            if name not in {connector.name for connector in self.mcp_connectors}
         ]
 
-        return builtins + mcp_tools
+        return builtins + dynamic_connector_tools + env_connector_tools
 
     def append_message(
         self,
@@ -849,12 +956,15 @@ class DemoStore:
         module: ModuleKey,
         content: str,
         *,
+        thread_id: str = "thread-primary",
         nodes=None,
         memory_hits=None,
         next_actions=None,
     ) -> ChatMessage:
+        self.ensure_thread(thread_id)
         message = ChatMessage(
             id=_message_id(),
+            thread_id=thread_id,
             role=role,
             author=author,
             module=module,
@@ -865,6 +975,8 @@ class DemoStore:
             next_actions=list(next_actions or []),
         )
         self.messages.append(message)
+        self.active_thread_id = thread_id
+        self._refresh_thread_stats()
         self.persist()
         return message
 
@@ -897,15 +1009,17 @@ class DemoStore:
     def create_thread_execution(
         self,
         *,
+        thread_id: str,
         module: ModuleKey,
         prompt: str,
         agent_id: str,
         selected_artifact_id: str | None,
         task_run_id: str | None = None,
     ) -> ThreadExecutionSession:
+        self.ensure_thread(thread_id)
         execution = ThreadExecutionSession(
             id=_thread_execution_id(),
-            thread_id="thread-primary",
+            thread_id=thread_id,
             module=module,
             prompt=prompt,
             status="running",
@@ -917,6 +1031,7 @@ class DemoStore:
             task_run_id=task_run_id,
         )
         self.thread_executions.insert(0, execution)
+        self.active_thread_id = thread_id
         self.persist()
         return execution
 
@@ -1029,6 +1144,128 @@ class DemoStore:
         if app is None:
             raise KeyError(f"Unknown app: {app_id}")
         return app
+
+    def ensure_thread(self, thread_id: str) -> ChatThread:
+        thread = next((item for item in self.threads if item.id == thread_id), None)
+        if thread is None:
+            raise KeyError(f"Unknown thread: {thread_id}")
+        return thread
+
+    def create_thread(self, title: str) -> ChatThread:
+        thread = ChatThread(
+            id=_thread_id(),
+            title=title.strip() or "New thread",
+            created_at=now_iso(),
+            updated_at=now_iso(),
+            message_count=0,
+            last_message_preview=None,
+        )
+        self.threads.insert(0, thread)
+        self.active_thread_id = thread.id
+        self.persist()
+        return thread
+
+    def update_skill_enabled(self, skill_id: str, enabled: bool) -> SkillDefinition:
+        skill = next((item for item in self.skills if item.id == skill_id), None)
+        if skill is None:
+            raise KeyError(f"Unknown skill: {skill_id}")
+        skill.enabled = enabled
+        self.persist()
+        return skill
+
+    def update_tool_enabled(self, tool_name: str, enabled: bool) -> ToolDefinition:
+        self.tool_enabled_overrides[tool_name] = enabled
+        self.persist()
+        tool = next((item for item in self.tool_catalog() if item.name == tool_name), None)
+        if tool is None:
+            raise KeyError(f"Unknown tool: {tool_name}")
+        return tool
+
+    def enabled_skill_ids(self) -> set[str]:
+        return {skill.id for skill in self.skills if skill.enabled}
+
+    def enabled_tool_names(self) -> set[str]:
+        return {tool.name for tool in self.tool_catalog() if tool.source == "builtin" and tool.enabled}
+
+    def add_mcp_connector(
+        self,
+        *,
+        name: str,
+        transport: str,
+        url: str | None,
+        command: str | None,
+        args: list[str],
+        env: dict[str, str],
+        enabled: bool,
+    ) -> MCPConnector:
+        connector = MCPConnector(
+            id=_entity_id("mcp"),
+            name=name,
+            transport=transport,
+            url=url,
+            command=command,
+            args=args,
+            env=env,
+            enabled=enabled,
+            created_at=now_iso(),
+            updated_at=now_iso(),
+        )
+        self.mcp_connectors.insert(0, connector)
+        self.persist()
+        return connector
+
+    def update_mcp_connector(
+        self,
+        connector_id: str,
+        *,
+        name: str | None = None,
+        transport: str | None = None,
+        url: str | None = None,
+        command: str | None = None,
+        args: list[str] | None = None,
+        env: dict[str, str] | None = None,
+        enabled: bool | None = None,
+    ) -> MCPConnector:
+        connector = next((item for item in self.mcp_connectors if item.id == connector_id), None)
+        if connector is None:
+            raise KeyError(f"Unknown MCP connector: {connector_id}")
+        if name is not None:
+            connector.name = name
+        if transport is not None:
+            connector.transport = transport
+        if url is not None:
+            connector.url = url
+        if command is not None:
+            connector.command = command
+        if args is not None:
+            connector.args = list(args)
+        if env is not None:
+            connector.env = dict(env)
+        if enabled is not None:
+            connector.enabled = enabled
+        connector.updated_at = now_iso()
+        self.persist()
+        return connector
+
+    def enabled_mcp_server_config(self) -> dict:
+        servers: dict[str, dict] = {}
+        for connector in self.mcp_connectors:
+            if not connector.enabled:
+                continue
+            config: dict[str, object] = {}
+            if connector.transport:
+                config["transport"] = connector.transport
+            if connector.url:
+                config["url"] = connector.url
+            if connector.command:
+                config["command"] = connector.command
+            if connector.args:
+                config["args"] = connector.args
+            if connector.env:
+                config["env"] = connector.env
+            if config:
+                servers[connector.name] = config
+        return {"mcpServers": servers}
 
     def get_goal(self, goal_id: str) -> Goal:
         goal = next((item for item in self.goals if item.id == goal_id), None)

@@ -114,7 +114,8 @@ class FounderOrchestrator:
         for skill in skills:
             if skill not in deduped:
                 deduped.append(skill)
-        return deduped
+        enabled = self.store.enabled_skill_ids()
+        return [skill for skill in deduped if skill in enabled]
 
     def _compose_skill_artifact(
         self,
@@ -324,18 +325,25 @@ class FounderOrchestrator:
         selected_artifact_id: str | None,
         explicit_app_id: str | None,
     ) -> str:
-        adapters.retrieve_workspace_memory(prompt)
+        enabled_tools = adapters.context.enabled_tool_names
+        if "retrieve_workspace_memory" in enabled_tools:
+            adapters.retrieve_workspace_memory(prompt)
         if selected_artifact_id:
-            adapters.inspect_selected_artifact(selected_artifact_id)
+            if "inspect_selected_artifact" in enabled_tools:
+                adapters.inspect_selected_artifact(selected_artifact_id)
 
         app_id = explicit_app_id or self._pick_app_id(prompt, module)
-        if app_id:
+        if app_id and "launch_workspace_app" in enabled_tools:
             adapters.launch_workspace_app(app_id, prompt)
-        else:
+        elif "run_workspace_skill" in enabled_tools:
             for skill_id in self._infer_skill_ids(prompt, module, app_id)[:2]:
                 adapters.run_workspace_skill(skill_id, prompt)
 
-        if module == ModuleKey.CAPITAL and any(keyword in prompt.lower() for keyword in ["publish", "send room", "investor room"]):
+        if (
+            "publish_to_investor_room" in enabled_tools
+            and module == ModuleKey.CAPITAL
+            and any(keyword in prompt.lower() for keyword in ["publish", "send room", "investor room"])
+        ):
             adapters.publish_to_investor_room()
 
         return ""
@@ -343,6 +351,7 @@ class FounderOrchestrator:
     def _run_thread_runtime(
         self,
         *,
+        thread_id: str,
         module: ModuleKey,
         prompt: str,
         active_agent,
@@ -353,11 +362,14 @@ class FounderOrchestrator:
     ) -> tuple[str, list[MemoryItem], list[SkillExecution], list[ToolCallRecord], str | None, Artifact | None]:
         context = ThreadToolContext(
             execution_id=execution_session.id,
+            thread_id=thread_id,
             founder_prompt=prompt,
             module=module,
             active_agent_id=active_agent.id,
             task_run_id=task.id,
             selected_artifact_id=selected_artifact_id,
+            enabled_skill_ids=self.store.enabled_skill_ids(),
+            enabled_tool_names=self.store.enabled_tool_names(),
         )
         adapters = ThreadToolAdapters(self.store, self.skill_engine, context)
 
@@ -456,6 +468,7 @@ class FounderOrchestrator:
     def _run_turn(
         self,
         *,
+        thread_id: str,
         module: ModuleKey,
         prompt: str,
         selected_artifact_id: str | None = None,
@@ -468,6 +481,7 @@ class FounderOrchestrator:
                 author="Founder",
                 module=module,
                 content=prompt,
+                thread_id=thread_id,
             )
 
         active_agent = self._select_agent(module, prompt)
@@ -482,6 +496,7 @@ class FounderOrchestrator:
             status=TaskStatus.RUNNING,
         )
         execution_session = self.store.create_thread_execution(
+            thread_id=thread_id,
             module=ModuleKey.APPS if explicit_app_id else module,
             prompt=prompt,
             agent_id=active_agent.id,
@@ -490,6 +505,7 @@ class FounderOrchestrator:
         )
 
         reply_content, memory_hits, executions, tool_calls, app_id, artifact = self._run_thread_runtime(
+            thread_id=thread_id,
             module=ModuleKey.APPS if explicit_app_id else module,
             prompt=prompt,
             active_agent=active_agent,
@@ -547,6 +563,7 @@ class FounderOrchestrator:
             author=active_agent.name,
             module=ModuleKey.APPS if explicit_app_id else module,
             content=final_reply,
+            thread_id=thread_id,
             nodes=nodes,
             memory_hits=memory_hits,
             next_actions=next_actions,
@@ -577,6 +594,7 @@ class FounderOrchestrator:
             nodes,
             execution_session,
         ) = self._run_turn(
+            thread_id=request.thread_id or self.store.active_thread_id,
             module=request.module,
             prompt=request.message,
             selected_artifact_id=request.selected_artifact_id,
@@ -637,6 +655,7 @@ class FounderOrchestrator:
             _nodes,
             _execution_session,
         ) = self._run_turn(
+            thread_id=self.store.active_thread_id,
             module=ModuleKey.APPS,
             prompt=request.prompt,
             explicit_app_id=app_id,
@@ -669,6 +688,7 @@ class FounderOrchestrator:
             _nodes,
             _execution_session,
         ) = self._run_turn(
+            thread_id=self.store.active_thread_id,
             module=workflow.module,
             prompt=f"{workflow.title}: {request.note}",
             append_user_message=False,

@@ -3,9 +3,13 @@ import type {
   Artifact,
   AuthSession,
   BootstrapResponse,
+  ChatThread,
   ChatRequest,
   ChatResponse,
   InvestorRoomActionResponse,
+  MCPConnector,
+  SkillDefinition,
+  ToolDefinition,
   UploadRecord,
   UploadResponse,
   WorkspaceUser,
@@ -92,6 +96,64 @@ export function updateUser(
 
 export function fetchBootstrap(): Promise<BootstrapResponse> {
   return api<BootstrapResponse>("/api/bootstrap");
+}
+
+export function createThread(title: string): Promise<ChatThread> {
+  return api<ChatThread>("/api/threads", {
+    method: "POST",
+    body: JSON.stringify({ title }),
+  });
+}
+
+export function toggleSkill(skillId: string, enabled: boolean): Promise<SkillDefinition> {
+  return api<SkillDefinition>(`/api/skills/${skillId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export function toggleTool(toolName: string, enabled: boolean): Promise<ToolDefinition> {
+  return api<ToolDefinition>(`/api/tools/${encodeURIComponent(toolName)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export function listMcpConnectors(): Promise<MCPConnector[]> {
+  return api<MCPConnector[]>("/api/mcp-connectors");
+}
+
+export function createMcpConnector(payload: {
+  name: string;
+  transport: string;
+  url?: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  enabled?: boolean;
+}): Promise<MCPConnector> {
+  return api<MCPConnector>("/api/mcp-connectors", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateMcpConnector(
+  connectorId: string,
+  payload: {
+    name?: string;
+    transport?: string;
+    url?: string;
+    command?: string;
+    args?: string[];
+    env?: Record<string, string>;
+    enabled?: boolean;
+  },
+): Promise<MCPConnector> {
+  return api<MCPConnector>(`/api/mcp-connectors/${connectorId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function updateWorkspace(payload: {

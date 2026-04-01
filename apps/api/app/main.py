@@ -20,6 +20,7 @@ from .models import (
     Artifact,
     ArtifactUpdateRequest,
     BootstrapResponse,
+    ChatThread,
     ChatRequest,
     ChatResponse,
     Contact,
@@ -34,7 +35,13 @@ from .models import (
     KnowledgeSource,
     KnowledgeSourceCreateRequest,
     LoginRequest,
+    MCPConnector,
+    MCPConnectorCreateRequest,
+    MCPConnectorUpdateRequest,
     PublishInvestorRoomRequest,
+    SkillToggleRequest,
+    ThreadCreateRequest,
+    ToolToggleRequest,
     UploadResponse,
     UploadRecord,
     Workspace,
@@ -222,9 +229,75 @@ def get_skills():
     return store.skills
 
 
+@app.patch("/api/skills/{skill_id}")
+def patch_skill(skill_id: str, request: SkillToggleRequest):
+    try:
+        return store.update_skill_enabled(skill_id, request.enabled)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @app.get("/api/apps")
 def get_apps():
     return store.apps
+
+
+@app.get("/api/tools")
+def get_tools():
+    return store.tool_catalog()
+
+
+@app.patch("/api/tools/{tool_name}")
+def patch_tool(tool_name: str, request: ToolToggleRequest):
+    try:
+        return store.update_tool_enabled(tool_name, request.enabled)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/mcp-connectors", response_model=list[MCPConnector])
+def get_mcp_connectors():
+    return store.mcp_connectors
+
+
+@app.post("/api/mcp-connectors", response_model=MCPConnector)
+def post_mcp_connector(request: MCPConnectorCreateRequest) -> MCPConnector:
+    return store.add_mcp_connector(
+        name=request.name,
+        transport=request.transport,
+        url=request.url,
+        command=request.command,
+        args=request.args,
+        env=request.env,
+        enabled=request.enabled,
+    )
+
+
+@app.patch("/api/mcp-connectors/{connector_id}", response_model=MCPConnector)
+def patch_mcp_connector(connector_id: str, request: MCPConnectorUpdateRequest) -> MCPConnector:
+    try:
+        return store.update_mcp_connector(
+            connector_id,
+            name=request.name,
+            transport=request.transport,
+            url=request.url,
+            command=request.command,
+            args=request.args,
+            env=request.env,
+            enabled=request.enabled,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/threads", response_model=list[ChatThread])
+def get_threads() -> list[ChatThread]:
+    return store.threads
+
+
+@app.post("/api/threads", response_model=ChatThread)
+def post_thread(request: ThreadCreateRequest) -> ChatThread:
+    return store.create_thread(request.title)
 
 
 @app.get("/api/knowledge-sources")

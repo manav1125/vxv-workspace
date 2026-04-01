@@ -243,6 +243,65 @@ def test_chat_executes_skill_flow_and_persists_nodes() -> None:
     assert bootstrap["thread_executions"]
 
 
+def test_threads_and_chat_isolation() -> None:
+    headers = auth_headers()
+    create_response = client.post("/api/threads", headers=headers, json={"title": "Financial sandbox"})
+    assert create_response.status_code == 200
+    thread_id = create_response.json()["id"]
+
+    chat_response = client.post(
+        "/api/chat",
+        headers=headers,
+        json={
+            "module": "inbox",
+            "thread_id": thread_id,
+            "message": "build me a financial model",
+        },
+    )
+    assert chat_response.status_code == 200
+    payload = chat_response.json()
+    assert payload["reply"]["thread_id"] == thread_id
+    assert payload["thread_execution"]["thread_id"] == thread_id
+
+
+def test_toggle_skill_tool_and_add_connector() -> None:
+    headers = auth_headers()
+    skill_response = client.patch("/api/skills/skill-financial-model", headers=headers, json={"enabled": False})
+    assert skill_response.status_code == 200
+    assert skill_response.json()["enabled"] is False
+
+    tool_response = client.patch("/api/tools/run_workspace_skill", headers=headers, json={"enabled": False})
+    assert tool_response.status_code == 200
+    assert tool_response.json()["enabled"] is False
+
+    connector_response = client.post(
+        "/api/mcp-connectors",
+        headers=headers,
+        json={
+            "name": "Notion",
+            "transport": "sse",
+            "url": "https://example.com/mcp",
+            "enabled": True,
+        },
+    )
+    assert connector_response.status_code == 200
+    connector_id = connector_response.json()["id"]
+
+    toggle_connector_response = client.patch(
+        f"/api/mcp-connectors/{connector_id}",
+        headers=headers,
+        json={"enabled": False},
+    )
+    assert toggle_connector_response.status_code == 200
+    assert toggle_connector_response.json()["enabled"] is False
+
+    # Restore defaults so later tests run against normal workspace capabilities.
+    restore_skill = client.patch("/api/skills/skill-financial-model", headers=headers, json={"enabled": True})
+    assert restore_skill.status_code == 200
+    restore_tool = client.patch("/api/tools/run_workspace_skill", headers=headers, json={"enabled": True})
+    assert restore_tool.status_code == 200
+
+
 def test_chat_builds_financial_model_instead_of_founder_review() -> None:
     headers = auth_headers()
     response = client.post(
