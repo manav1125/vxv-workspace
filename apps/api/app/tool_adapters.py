@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import json
-import os
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Optional
 
 from agentscope.service import ServiceExecStatus, ServiceResponse, ServiceToolkit
 
 from .models import Artifact, MemoryItem, ModuleKey, TaskRun, ToolCallRecord, WorkspaceApp
+from .runtime import load_mcp_server_config
 from .skill_engine import SkillEngine, SkillExecution
 from .store import DemoStore
 
@@ -148,12 +146,17 @@ class ThreadToolAdapters:
             [f"# {app.title} Output"]
             + [f"## {execution.title}\n\n{execution.body}" for execution in executions]
         )
+        primary_execution = executions[0] if executions else None
         artifact = self.store.upsert_artifact(
-            title=f"{app.title} Output",
-            module=ModuleKey.APPS,
-            summary=f"{app.title} executed {len(executions)} skill(s) from the thread workspace.",
+            title=primary_execution.artifact_title if primary_execution and len(executions) == 1 else f"{app.title} Output",
+            module=app.module if len(executions) == 1 else ModuleKey.APPS,
+            summary=(
+                primary_execution.artifact_summary
+                if primary_execution and len(executions) == 1
+                else f"{app.title} executed {len(executions)} skill(s) from the thread workspace."
+            ),
             content=content,
-            kind=executions[0].artifact_kind if executions else self._default_artifact_kind(),
+            kind=primary_execution.artifact_kind if primary_execution else self._default_artifact_kind(),
             linked_run_id=self.context.task_run_id,
         )
 
@@ -271,15 +274,4 @@ class ThreadToolAdapters:
         )
 
     def _load_mcp_server_config(self) -> dict | None:
-        config_json = os.getenv("VXV_MCP_SERVER_CONFIG_JSON", "").strip()
-        config_path = os.getenv("VXV_MCP_SERVER_CONFIG_PATH", "").strip()
-        try:
-            if config_json:
-                return json.loads(config_json)
-            if config_path:
-                path = Path(config_path)
-                if path.exists():
-                    return json.loads(path.read_text())
-        except Exception:
-            return None
-        return None
+        return load_mcp_server_config()

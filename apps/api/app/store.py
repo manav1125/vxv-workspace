@@ -28,6 +28,7 @@ from .models import (
     TaskRun,
     TaskStatus,
     ThreadExecutionSession,
+    ToolDefinition,
     ToolCallRecord,
     WorkflowDefinition,
     Workspace,
@@ -180,6 +181,12 @@ class DemoStore:
     ])
     skills: List[SkillDefinition] = field(default_factory=lambda: [
         SkillDefinition(
+            id="skill-financial-model",
+            name="Financial Model Builder",
+            summary="Builds startup operating models with assumptions, revenue ramps, burn, runway, and scenarios.",
+            capability_type="finance",
+        ),
+        SkillDefinition(
             id="skill-market-synthesis",
             name="Market Synthesis",
             summary="Clusters market signals, competitor moves, and customer evidence into founder-ready context.",
@@ -217,6 +224,17 @@ class DemoStore:
         ),
     ])
     apps: List[WorkspaceApp] = field(default_factory=lambda: [
+        WorkspaceApp(
+            id="app-financial-model",
+            title="Financial Model Builder",
+            category=AppCategory.FUNDRAISING,
+            module=ModuleKey.CAPITAL,
+            summary="Build a founder-grade operating model with assumptions, revenue, burn, runway, and scenario views.",
+            skill_ids=["skill-financial-model"],
+            artifact_outputs=["Financial model", "Assumption sheet", "Runway scenarios"],
+            status="ready",
+            featured=False,
+        ),
         WorkspaceApp(
             id="app-pitch-reviewer",
             title="Pitch Deck Reviewer",
@@ -470,6 +488,8 @@ class DemoStore:
         payload = self.persistence.load_state(self.workspace.id)
         if payload:
             self._load(payload)
+            self._merge_seed_defaults()
+            self.persist()
         else:
             self.persist()
 
@@ -491,6 +511,22 @@ class DemoStore:
         self.thread_executions = [
             ThreadExecutionSession.model_validate(item) for item in payload.get("thread_executions", [])
         ]
+
+    def _merge_seed_defaults(self) -> None:
+        seed = DemoStore(disable_persistence=True)
+        self.agents = self._merge_by_id(self.agents, seed.agents)
+        self.skills = self._merge_by_id(self.skills, seed.skills)
+        self.apps = self._merge_by_id(self.apps, seed.apps)
+        self.workflows = self._merge_by_id(self.workflows, seed.workflows)
+
+    @staticmethod
+    def _merge_by_id(existing: list, seeded: list) -> list:
+        merged = list(existing)
+        existing_ids = {item.id for item in existing}
+        for item in seeded:
+            if item.id not in existing_ids:
+                merged.append(item)
+        return merged
 
     def persist(self) -> None:
         if self.disable_persistence:
@@ -578,7 +614,29 @@ class DemoStore:
         limit: int = 6,
         selected_artifact_id: str | None = None,
     ) -> list[MemoryItem]:
-        tokens = {token for token in re.findall(r"[a-z0-9]+", query.lower()) if len(token) > 2}
+        stopwords = {
+            "build",
+            "make",
+            "create",
+            "need",
+            "help",
+            "with",
+            "for",
+            "from",
+            "into",
+            "this",
+            "that",
+            "latest",
+            "current",
+            "business",
+            "model",
+            "plan",
+        }
+        tokens = {
+            token
+            for token in re.findall(r"[a-z0-9]+", query.lower())
+            if len(token) > 2 and token not in stopwords
+        }
         documents: list[tuple[MemoryItem, str]] = []
 
         documents.append(
@@ -674,7 +732,7 @@ class DemoStore:
             )
             for investor in self.fundraise_pipeline.investors
         )
-        documents.extend(
+        thread_documents = [
             (
                 MemoryItem(
                     id=f"memory-message-{message.id}",
@@ -686,8 +744,8 @@ class DemoStore:
                 ),
                 message.content[:1500],
             )
-            for message in self.messages[-8:]
-        )
+            for message in self.messages[-6:]
+        ]
 
         def score(item: tuple[MemoryItem, str]) -> tuple[int, int]:
             memory, text = item
@@ -700,7 +758,14 @@ class DemoStore:
         if not tokens:
             return [item[0] for item in ranked[:limit]]
         filtered = [item[0] for item in ranked if score(item)[0] > 0]
-        return filtered[:limit] if filtered else [item[0] for item in ranked[:limit]]
+        if filtered:
+            thread_filtered = [item for item in filtered if item.kind == "thread"]
+            non_thread_filtered = [item for item in filtered if item.kind != "thread"]
+            return (non_thread_filtered + thread_filtered[:2])[:limit]
+
+        ranked_threads = sorted(thread_documents, key=score, reverse=True)
+        ranked_non_threads = [item[0] for item in ranked if item[0].kind != "thread"]
+        return (ranked_non_threads[: max(0, limit - 1)] + [item[0] for item in ranked_threads[:1]])[:limit]
 
     def bootstrap(self) -> BootstrapResponse:
         return BootstrapResponse(
@@ -708,6 +773,7 @@ class DemoStore:
             goals=self.goals,
             agents=self.agents,
             skills=self.skills,
+            tool_catalog=self.tool_catalog(),
             apps=self.apps,
             knowledge_sources=self.knowledge_sources,
             contacts=self.contacts,
@@ -722,6 +788,59 @@ class DemoStore:
             integrations=detect_runtime_capabilities().to_model(),
             metrics=self.metrics(),
         )
+
+    def tool_catalog(self) -> List[ToolDefinition]:
+        builtins = [
+            ToolDefinition(
+                id="tool-retrieve-workspace-memory",
+                name="retrieve_workspace_memory",
+                summary="Searches workspace memory and uploads to ground the current founder request.",
+                category="memory",
+                source="builtin",
+            ),
+            ToolDefinition(
+                id="tool-inspect-selected-artifact",
+                name="inspect_selected_artifact",
+                summary="Loads the active artifact or uploaded document into the chat run context.",
+                category="artifact",
+                source="builtin",
+            ),
+            ToolDefinition(
+                id="tool-run-workspace-skill",
+                name="run_workspace_skill",
+                summary="Executes a reusable skill from chat to produce a concrete founder output.",
+                category="skill",
+                source="builtin",
+            ),
+            ToolDefinition(
+                id="tool-launch-workspace-app",
+                name="launch_workspace_app",
+                summary="Launches a deeper multi-step app workflow directly from the chat thread.",
+                category="app",
+                source="builtin",
+            ),
+            ToolDefinition(
+                id="tool-publish-to-investor-room",
+                name="publish_to_investor_room",
+                summary="Publishes approved fundraising artifacts to the investor room when capital work is ready.",
+                category="publish",
+                source="builtin",
+            ),
+        ]
+
+        integrations = detect_runtime_capabilities()
+        mcp_tools = [
+            ToolDefinition(
+                id=f"tool-mcp-{name}",
+                name=name,
+                summary="Connected MCP server available to AgentScope chat runs.",
+                category="mcp",
+                source="mcp",
+            )
+            for name in integrations.mcp_server_names
+        ]
+
+        return builtins + mcp_tools
 
     def append_message(
         self,

@@ -40,8 +40,12 @@ def test_bootstrap_includes_apps_and_skills() -> None:
     payload = response.json()
     assert "apps" in payload
     assert "skills" in payload
+    assert "tool_catalog" in payload
     assert "thread_executions" in payload
+    assert "mcp_server_count" in payload["integrations"]
+    assert "mcp_server_names" in payload["integrations"]
     assert any(item["title"] == "Pitch Deck Reviewer" for item in payload["apps"])
+    assert any(item["name"] == "retrieve_workspace_memory" for item in payload["tool_catalog"])
 
 
 def test_artifact_patch_updates_content() -> None:
@@ -237,6 +241,25 @@ def test_chat_executes_skill_flow_and_persists_nodes() -> None:
     assert latest_assistant["nodes"]
     assert latest_assistant["memory_hits"]
     assert bootstrap["thread_executions"]
+
+
+def test_chat_builds_financial_model_instead_of_founder_review() -> None:
+    headers = auth_headers()
+    response = client.post(
+        "/api/chat",
+        headers=headers,
+        json={
+            "module": "inbox",
+            "message": "Build me a financial model for the business with runway scenarios.",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["artifact"]["title"] == "Financial Model"
+    assert any(node["title"] == "Financial model builder" for node in payload["nodes"] if node["kind"] == "skill")
+    assert any(node["title"] == "Financial Model Builder" for node in payload["nodes"] if node["kind"] == "app")
+    assert all(node["title"] != "Founder review builder" for node in payload["nodes"])
+    assert "Financial Model" in payload["reply"]["content"]
 
 
 def test_owner_can_create_workspace_user() -> None:

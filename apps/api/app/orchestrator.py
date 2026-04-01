@@ -35,6 +35,8 @@ class FounderOrchestrator:
 
     def _select_agent(self, module: ModuleKey, text: str):
         lowered = text.lower()
+        if any(keyword in lowered for keyword in ["financial model", "forecast", "runway", "burn", "revenue model", "unit economics"]):
+            return self.store.get_agent("agent-analyst")
         if any(keyword in lowered for keyword in ["investor", "fundraise", "diligence", "memo", "deck", "pitch"]):
             return self.store.get_agent("agent-fundraise")
         if any(keyword in lowered for keyword in ["gtm", "growth", "campaign", "customer", "competitor", "research"]):
@@ -59,6 +61,8 @@ class FounderOrchestrator:
 
     def _pick_app_id(self, text: str, module: ModuleKey) -> str | None:
         lowered = text.lower()
+        if any(keyword in lowered for keyword in ["financial model", "forecast", "runway", "burn", "unit economics", "revenue model"]):
+            return "app-financial-model"
         if any(keyword in lowered for keyword in ["investor update", "diligence", "investor room"]):
             return "app-investor-update"
         if any(keyword in lowered for keyword in ["deck", "pitch", "investor memo", "deck review"]):
@@ -79,6 +83,8 @@ class FounderOrchestrator:
     def _infer_skill_ids(self, text: str, module: ModuleKey, app_id: str | None) -> list[str]:
         lowered = text.lower()
         skills: list[str] = list(self.store.get_app(app_id).skill_ids) if app_id else []
+        if any(keyword in lowered for keyword in ["financial model", "forecast", "runway", "burn", "unit economics", "revenue model"]):
+            skills.append("skill-financial-model")
         if any(keyword in lowered for keyword in ["deck", "pitch", "investor memo"]):
             skills.append("skill-deck-review")
         if any(keyword in lowered for keyword in ["market", "competitor", "positioning", "gtm"]):
@@ -99,7 +105,7 @@ class FounderOrchestrator:
                 ModuleKey.TEAM: ["skill-hiring-scorecard"],
                 ModuleKey.EXECUTION: ["skill-founder-review"],
                 ModuleKey.ARTIFACTS: ["skill-market-synthesis"],
-                ModuleKey.CAPITAL: ["skill-diligence-pack"],
+                ModuleKey.CAPITAL: ["skill-financial-model"],
                 ModuleKey.APPS: ["skill-market-synthesis"],
             }
             skills = default_by_module[module]
@@ -152,51 +158,47 @@ class FounderOrchestrator:
         app_id: str | None,
         execution_summary: str,
     ) -> str:
-        executed_titles = ", ".join(execution.title for execution in executions) or "workspace reasoning"
-        context_lines = "\n".join(f"- {item.title}: {item.summary}" for item in memory_hits[:5])
-        if self.runtime.is_ready():
-            try:
-                system_prompt = (
-                    f"You are {active_agent_name} inside VXV Workspace.\n"
-                    f"Role: {active_agent_role}\n"
-                    f"Module: {module.value}\n"
-                    "You are acting like a co-founder and chief of staff for the founder.\n"
-                    "Be specific, operational, and concise. Use markdown sections: What I did, What I found, Next move."
-                )
-                user_prompt = (
-                    f"Founder request:\n{prompt}\n\n"
-                    f"Execution summary:\n{execution_summary}\n\n"
-                    f"Executed tools and skills:\n- {executed_titles}\n\n"
-                    f"Saved artifact: {artifact.title if artifact else 'None'}\n"
-                    f"Artifact summary: {artifact.summary if artifact else 'No artifact saved yet'}\n\n"
-                    f"Memory used:\n{context_lines or '- None'}\n\n"
-                    f"App launched: {app_id or 'None'}"
-                )
-                return self.runtime.generate(
-                    agent_name=active_agent_name,
-                    sys_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                )
-            except Exception:
-                pass
+        app_title = self.store.get_app(app_id).title if app_id else None
+        primary_execution = executions[0] if executions else None
+        if artifact:
+            if app_title:
+                lead = f"I ran `{app_title}` and produced `{artifact.title}`."
+            elif primary_execution:
+                lead = f"I completed `{primary_execution.title}` and produced `{artifact.title}`."
+            else:
+                lead = f"I completed the requested work and saved `{artifact.title}`."
+        else:
+            lead = "I worked from the current thread and prepared the next step."
 
-        action_line = (
-            f"I launched the {self.store.get_app(app_id).title} workspace and saved `{artifact.title}`."
-            if app_id and artifact
-            else f"I executed {executed_titles} and saved `{artifact.title}`." if artifact
-            else f"I worked through the request and prepared the next actions."
-        )
+        context_lines = [f"- {item.title}" for item in memory_hits[:3]]
+        result_lines: list[str] = []
+        if artifact:
+            result_lines.append(f"- Output ready: `{artifact.title}`")
+            result_lines.append(f"- {artifact.summary}")
+        for execution in executions[:2]:
+            result_lines.extend(f"- {bullet}" for bullet in execution.bullet_points[:2])
+        if not result_lines:
+            result_lines.append("- No reusable output is ready yet.")
+
+        next_steps = [
+            "- Open the work panel to inspect or edit the result.",
+            "- Reply in this thread with the changes you want and I will update the same output.",
+        ]
+        if primary_execution and primary_execution.skill_id == "skill-financial-model":
+            next_steps = [
+                "- Confirm your current cash balance, monthly payroll, and target revenue plan.",
+                "- I can turn this draft into a tighter 12-month operating model in the same thread.",
+            ]
+
         return (
-            f"## {active_agent_name}\n\n"
-            "### What I did\n"
-            f"- {action_line}\n"
-            f"- {execution_summary}\n\n"
-            "### What I found\n"
-            f"{context_lines or '- I worked mostly from the current thread context.'}\n\n"
-            "### Next move\n"
-            "- Review the embedded nodes in this thread.\n"
-            "- Open the workspace panel if you want to refine or publish the output.\n"
-            "- Keep working in this thread so the memory stays continuous.\n"
+            f"{lead}\n\n"
+            "What I used\n"
+            f"- Lead agent: {active_agent_name}\n"
+            f"{chr(10).join(context_lines) if context_lines else '- Current thread context only'}\n\n"
+            "What is ready\n"
+            f"{chr(10).join(result_lines)}\n\n"
+            "Next\n"
+            f"{chr(10).join(next_steps)}"
         )
 
     def _next_actions(self, app_id: str | None, executions: list[SkillExecution], tool_calls: list[ToolCallRecord]) -> list[str]:
@@ -511,7 +513,7 @@ class FounderOrchestrator:
             f"Used {len(tool_calls)} tool call(s), {len(executions)} skill execution(s), and "
             f"{'saved ' + artifact.title if artifact else 'kept the result in thread'}."
         )
-        final_reply = reply_content or self._reply_content(
+        final_reply = self._reply_content(
             prompt=prompt,
             active_agent_name=active_agent.name,
             active_agent_role=active_agent.role,
