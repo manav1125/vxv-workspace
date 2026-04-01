@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
 from agentscope.service import ServiceExecStatus, ServiceResponse, ServiceToolkit
@@ -39,6 +42,9 @@ class ThreadToolAdapters:
         toolkit.add(self.run_workspace_skill)
         toolkit.add(self.launch_workspace_app)
         toolkit.add(self.publish_to_investor_room)
+        server_config = self._load_mcp_server_config()
+        if server_config:
+            toolkit.add_mcp_servers(server_config)
         return toolkit
 
     def retrieve_workspace_memory(self, query: str) -> ServiceResponse:
@@ -263,3 +269,17 @@ class ThreadToolAdapters:
                 skill_id=skill_id,
             )
         )
+
+    def _load_mcp_server_config(self) -> dict | None:
+        config_json = os.getenv("VXV_MCP_SERVER_CONFIG_JSON", "").strip()
+        config_path = os.getenv("VXV_MCP_SERVER_CONFIG_PATH", "").strip()
+        try:
+            if config_json:
+                return json.loads(config_json)
+            if config_path:
+                path = Path(config_path)
+                if path.exists():
+                    return json.loads(path.read_text())
+        except Exception:
+            return None
+        return None
