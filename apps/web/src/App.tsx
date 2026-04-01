@@ -156,49 +156,68 @@ function App() {
 
   const loadWorkspace = async (options?: { artifactId?: string; appId?: string; executionId?: string; threadId?: string }) => {
     const [bootstrap, latestUploads] = await Promise.all([fetchBootstrap(), fetchUploads()]);
-    setData(bootstrap);
+    const normalizedThreads =
+      bootstrap.threads && bootstrap.threads.length
+        ? bootstrap.threads
+        : [
+            {
+              id: "thread-primary",
+              title: "Primary thread",
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              message_count: (bootstrap.messages ?? []).length,
+              last_message_preview: bootstrap.messages?.[bootstrap.messages.length - 1]?.content?.slice(0, 140) ?? null,
+            },
+          ];
+    const normalizedActiveThreadId = bootstrap.active_thread_id || normalizedThreads[0].id;
+    const normalizedBootstrap = {
+      ...bootstrap,
+      threads: normalizedThreads,
+      active_thread_id: normalizedActiveThreadId,
+    };
+    setData(normalizedBootstrap);
     setUploads(latestUploads);
-    const availableThreadIds = new Set(bootstrap.threads.map((thread) => thread.id));
-    const requestedThreadId = options?.threadId || selectedThreadId || bootstrap.active_thread_id;
-    const nextThreadId = availableThreadIds.has(requestedThreadId) ? requestedThreadId : bootstrap.active_thread_id;
+    const availableThreadIds = new Set(normalizedThreads.map((thread) => thread.id));
+    const requestedThreadId = options?.threadId || selectedThreadId || normalizedActiveThreadId;
+    const nextThreadId = availableThreadIds.has(requestedThreadId) ? requestedThreadId : normalizedActiveThreadId;
     setSelectedThreadId(nextThreadId);
 
     const nextArtifact =
-      bootstrap.artifacts.find((artifact) => artifact.id === options?.artifactId) ??
-      bootstrap.artifacts.find((artifact) => artifact.id === selectedArtifactId) ??
-      bootstrap.artifacts[0];
+      normalizedBootstrap.artifacts.find((artifact) => artifact.id === options?.artifactId) ??
+      normalizedBootstrap.artifacts.find((artifact) => artifact.id === selectedArtifactId) ??
+      normalizedBootstrap.artifacts[0];
     if (nextArtifact) {
       setSelectedArtifactId(nextArtifact.id);
       setArtifactDraft(nextArtifact.content);
     }
 
     const nextApp =
-      bootstrap.apps.find((app) => app.id === options?.appId) ??
-      bootstrap.apps.find((app) => app.id === selectedAppId) ??
-      bootstrap.apps.find((app) => app.featured) ??
-      bootstrap.apps[0];
+      normalizedBootstrap.apps.find((app) => app.id === options?.appId) ??
+      normalizedBootstrap.apps.find((app) => app.id === selectedAppId) ??
+      normalizedBootstrap.apps.find((app) => app.featured) ??
+      normalizedBootstrap.apps[0];
     if (nextApp) {
       setSelectedAppId(nextApp.id);
       setAppPrompt((current) => current || `Run ${nextApp.title.toLowerCase()} on the latest workspace context.`);
     }
 
     const nextExecution =
-      bootstrap.thread_executions.find((execution) => execution.id === options?.executionId) ??
-      bootstrap.thread_executions.find((execution) => execution.app_id === options?.appId) ??
-      bootstrap.thread_executions.find((execution) => execution.thread_id === nextThreadId) ??
-      bootstrap.thread_executions.find((execution) => execution.id === selectedExecutionId) ??
-      bootstrap.thread_executions[0];
+      normalizedBootstrap.thread_executions.find((execution) => execution.id === options?.executionId) ??
+      normalizedBootstrap.thread_executions.find((execution) => execution.app_id === options?.appId) ??
+      normalizedBootstrap.thread_executions.find((execution) => execution.thread_id === nextThreadId) ??
+      normalizedBootstrap.thread_executions.find((execution) => execution.id === selectedExecutionId) ??
+      normalizedBootstrap.thread_executions[0];
     if (nextExecution) {
       setSelectedExecutionId(nextExecution.id);
     }
 
     setWorkspaceForm({
-      company_name: bootstrap.workspace.company_name,
-      founder_name: bootstrap.workspace.founder_name,
-      stage: bootstrap.workspace.stage,
-      mission: bootstrap.workspace.mission,
-      primary_kpi: bootstrap.workspace.primary_kpi,
-      summary: bootstrap.workspace.summary,
+      company_name: normalizedBootstrap.workspace.company_name,
+      founder_name: normalizedBootstrap.workspace.founder_name,
+      stage: normalizedBootstrap.workspace.stage,
+      mission: normalizedBootstrap.workspace.mission,
+      primary_kpi: normalizedBootstrap.workspace.primary_kpi,
+      summary: normalizedBootstrap.workspace.summary,
     });
   };
 
